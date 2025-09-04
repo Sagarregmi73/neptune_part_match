@@ -1,0 +1,14 @@
+fastapi
+uvicorn 
+boto3
+pandas 
+openpyxl 
+gremlinpython
+python-multipart
+python-dotenv
+psycopg2-binary
+pymongo
+pydantic   
+sqlalchemy
+dnspython
+requests
