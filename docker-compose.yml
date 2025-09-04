@@ -12,16 +12,16 @@ services:
       - postgres
       - mongo
 
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: posgres
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: partdb
-    ports:
-      - "5432:5432"
+  # postgres:
+  #   image: postgres:15
+  #   environment:
+  #     POSTGRES_USER: posgres
+  #     POSTGRES_PASSWORD: 123456
+  #     POSTGRES_DB: partdb
+  #   ports:
+  #     - "5432:5432"
 
-  mongo:
-    image: mongo:6
-    ports:
-      - "27017:27017"
+  # mongo:
+  #   image: mongo:6
+  #   ports:
+  #     - "27017:27017"
