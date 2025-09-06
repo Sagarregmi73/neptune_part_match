@@ -29,7 +29,7 @@ jobs:
           DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $EC2_USER@$EC2_HOST <<'EOF'
-PROJECT_DIR="/home/ec2-user/project"
+PROJECT_DIR="/home/ec2-user/neptune_part_match"
 
 # Clone repo if it doesn't exist
 if [ ! -d "$PROJECT_DIR" ]; then
