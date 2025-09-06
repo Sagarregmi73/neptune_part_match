@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Build & Deploy to EC2
 
 on:
   push:
@@ -8,25 +8,45 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
+      # 1️⃣ Checkout repository
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # 2️⃣ Set up SSH key
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-      - name: Deploy Docker container
+      # 3️⃣ Build Docker image on EC2
+      - name: Build and deploy Docker on EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
           DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $EC2_USER@$EC2_HOST << 'EOF'
-            docker pull $DOCKER_IMAGE || true
+            cd /home/ec2-user  # choose directory for your project
+            # If repo exists, pull latest changes, else clone
+            if [ -d "project" ]; then
+              cd project
+              git reset --hard
+              git pull
+            else
+              git clone https://github.com/<your-username>/<your-repo>.git project
+              cd project
+            fi
+
+            # Build Docker image
+            docker build -t $DOCKER_IMAGE .
+
+            # Stop & remove old containers
             docker ps -q --filter "ancestor=$DOCKER_IMAGE" | xargs -r docker stop
             docker ps -a -q --filter "ancestor=$DOCKER_IMAGE" | xargs -r docker rm
+
+            # Run container
             docker run -d -p 8443:8000 $DOCKER_IMAGE
 EOF
