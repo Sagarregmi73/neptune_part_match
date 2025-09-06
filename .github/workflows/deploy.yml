@@ -45,14 +45,14 @@ jobs:
             # Build Docker image
             docker build -t $DOCKER_IMAGE .
 
-            # Stop and remove old containers
+            # Stop and remove old container if running
             RUNNING_CONTAINER=$(docker ps -q --filter "ancestor=$DOCKER_IMAGE")
             if [ ! -z "$RUNNING_CONTAINER" ]; then
               docker stop $RUNNING_CONTAINER
               docker rm $RUNNING_CONTAINER
             fi
 
-            # Remove old images
+            # Remove old images (optional)
             OLD_IMAGES=$(docker images -q "$DOCKER_IMAGE")
             if [ ! -z "$OLD_IMAGES" ]; then
               docker rmi -f $OLD_IMAGES
