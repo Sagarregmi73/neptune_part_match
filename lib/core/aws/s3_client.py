@@ -5,7 +5,19 @@ from botocore.exceptions import ClientError
 from lib.core.logging import logger
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path="env/local.env")
+# Try multiple possible env paths
+ENV_PATHS = [
+    "env/local.env",                        # local dev
+    "/home/ec2-user/neptune_part_match/.env"  # EC2
+]
+
+for path in ENV_PATHS:
+    if os.path.exists(path):
+        load_dotenv(dotenv_path=path)
+        logger.info(f"Loaded environment from {path}")
+        break
+else:
+    logger.warning("No .env file found, relying on system environment variables")
 
 AWS_REGION = os.getenv("AWS_REGION")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
