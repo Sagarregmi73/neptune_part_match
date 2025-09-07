@@ -6,20 +6,15 @@ from lib.core.logging import logger
 def load_environment():
     """
     Dynamically load environment variables:
-    - Local: env/local.env
-    - EC2/Docker: .env
-    - Else: system environment variables
+    - Local: .env inside container (copied from env/local.env)
+    - EC2/Docker: rely on system environment variables injected via `docker run -e`
     """
-    tried_paths = ["env/local.env", ".env"]
-
-    for path in tried_paths:
-        if os.path.exists(path):
-            load_dotenv(dotenv_path=path)
-            logger.info(f"✅ Loaded environment from {path}")
-            return
-
-    logger.warning("⚠️ No .env file found, relying on system environment variables only")
-
+    local_env = ".env"
+    if os.path.exists(local_env):
+        load_dotenv(local_env)
+        logger.info(f"✅ Loaded environment from {local_env}")
+    else:
+        logger.info("⚠️ No .env file found, relying on system environment variables")
 
 # Load environment at import
 load_environment()
