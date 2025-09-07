@@ -1,44 +1,48 @@
-  name: Deploy Docker on EC2
-  env:
-    EC2_HOST: ${{ secrets.EC2_HOST }}
-    EC2_USER: ${{ secrets.EC2_USER }}
-    DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
-  run: |
-    ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "${EC2_USER}@${EC2_HOST}" \
-    "PROJECT_DIR='/home/ec2-user/neptune_part_match' \
-     CONTAINER_NAME='neptune_app' \
-     DOCKER_IMAGE='${DOCKER_IMAGE}' \
-     bash -s" << 'EOF'
-      set -euo pipefail
+name: CI/CD Deploy
 
-      echo "Project directory: $PROJECT_DIR"
-      echo "Docker image: $DOCKER_IMAGE"
+on:
+  push:
+    branches: [ "main" ]
 
-      # Clone if missing
-      if [ ! -d "$PROJECT_DIR/.git" ]; then
-        git clone https://github.com/Sagarregmi73/neptune_part_match.git "$PROJECT_DIR"
-      fi
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      cd "$PROJECT_DIR"
-      git fetch origin main
-      git reset --hard origin/main
+    steps:
+      - name: Deploy Docker on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "${EC2_USER}@${EC2_HOST}" bash -s << 'EOF'
+            set -euo pipefail
+            PROJECT_DIR="/home/ec2-user/neptune_part_match"
+            CONTAINER_NAME="neptune_app"
+            DOCKER_IMAGE="${DOCKER_IMAGE}"
+            echo "Project directory: $PROJECT_DIR"
+            echo "Docker image: $DOCKER_IMAGE"
 
-      # Check Dockerfile exists
-      if [ ! -f Dockerfile ]; then
-        echo "ERROR: Dockerfile not found"
-        exit 1
-      fi
+            if [ ! -d "$PROJECT_DIR/.git" ]; then
+              git clone https://github.com/Sagarregmi73/neptune_part_match.git "$PROJECT_DIR"
+            fi
 
-      # Build Docker image
-      docker build -t "$DOCKER_IMAGE" .
+            cd "$PROJECT_DIR"
+            git fetch origin main
+            git reset --hard origin/main
 
-      # Stop old container
-      if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        docker stop "$CONTAINER_NAME" || true
-        docker rm "$CONTAINER_NAME" || true
-      fi
+            if [ ! -f Dockerfile ]; then
+              echo "ERROR: Dockerfile not found"
+              exit 1
+            fi
 
-      docker image prune -f
-      docker run -d -p 8443:8000 --name "$CONTAINER_NAME" "$DOCKER_IMAGE"
-    EOF
+            docker build -t "$DOCKER_IMAGE" .
 
+            if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+              docker stop "$CONTAINER_NAME" || true
+              docker rm "$CONTAINER_NAME" || true
+            fi
+
+            docker image prune -f
+            docker run -d -p 8443:8000 --name "$CONTAINER_NAME" "$DOCKER_IMAGE"
+          EOF
