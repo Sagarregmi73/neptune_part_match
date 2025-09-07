@@ -1,5 +1,6 @@
-name: CI/CD Deploy
+name: CI/CD Deploy to EC2
 
+# Trigger workflow on push to main branch
 on:
   push:
     branches: [ "main" ]
@@ -9,40 +10,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout repo (optional on runner)
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Set up SSH key from GitHub Secrets
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      # 3️⃣ Deploy Docker on EC2
       - name: Deploy Docker on EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
           DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "${EC2_USER}@${EC2_HOST}" bash -s << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "${EC2_USER}@${EC2_HOST}" \
+          "PROJECT_DIR='/home/ec2-user/neptune_part_match' \
+           CONTAINER_NAME='neptune_app' \
+           DOCKER_IMAGE='${DOCKER_IMAGE}' \
+           bash -s" << 'EOF'
             set -euo pipefail
-            PROJECT_DIR="/home/ec2-user/neptune_part_match"
-            CONTAINER_NAME="neptune_app"
-            DOCKER_IMAGE="${DOCKER_IMAGE}"
-            echo "Project directory: $PROJECT_DIR"
-            echo "Docker image: $DOCKER_IMAGE"
 
+            echo "📂 Project directory: $PROJECT_DIR"
+            echo "🐳 Docker image: $DOCKER_IMAGE"
+
+            # Clone repo if it doesn't exist
             if [ ! -d "$PROJECT_DIR/.git" ]; then
+              echo "➡️ Cloning repository..."
               git clone https://github.com/Sagarregmi73/neptune_part_match.git "$PROJECT_DIR"
             fi
 
             cd "$PROJECT_DIR"
+
+            # Pull latest changes
             git fetch origin main
             git reset --hard origin/main
 
+            # Ensure Dockerfile exists
             if [ ! -f Dockerfile ]; then
-              echo "ERROR: Dockerfile not found"
+              echo "❌ ERROR: Dockerfile not found at $PWD"
               exit 1
             fi
 
+            # Build Docker image
+            echo "➡️ Building Docker image: $DOCKER_IMAGE"
             docker build -t "$DOCKER_IMAGE" .
 
+            # Stop old container if running
             if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+              echo "➡️ Stopping old container..."
               docker stop "$CONTAINER_NAME" || true
               docker rm "$CONTAINER_NAME" || true
             fi
 
+            # Clean up dangling images
+            echo "➡️ Cleaning up unused images..."
             docker image prune -f
+
+            # Run new container
+            echo "➡️ Starting new container..."
             docker run -d -p 8443:8000 --name "$CONTAINER_NAME" "$DOCKER_IMAGE"
           EOF
