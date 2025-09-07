@@ -1,54 +1,69 @@
-- name: Build and deploy Docker on EC2
-  env:
-    EC2_HOST: ${{ secrets.EC2_HOST }}
-    EC2_USER: ${{ secrets.EC2_USER }}
-    DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
-  run: |
-    ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $EC2_USER@$EC2_HOST bash -s << 'EOF'
-      set -e  # exit immediately if a command fails
+name: CI/CD Deploy to EC2
 
-      PROJECT_DIR="/home/ec2-user/neptune_part_match"
-      CONTAINER_NAME="neptune_app"
-      DOCKER_IMAGE="${DOCKER_IMAGE}"
+# Trigger workflow on push to main branch
+on:
+  push:
+    branches: [ "main" ]
 
-      echo "📂 Project directory: $PROJECT_DIR"
-      echo "🐳 Docker image name: $DOCKER_IMAGE"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      # Clone repo if missing
-      if [ ! -d "$PROJECT_DIR" ]; then
-        echo "➡️ Cloning repository..."
-        git clone https://github.com/Sagarregmi73/neptune_part_match.git "$PROJECT_DIR"
-      fi
+    steps:
+      # 1️⃣ Checkout the repo (optional, if needed on runner)
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      cd "$PROJECT_DIR"
+      # 2️⃣ Set up SSH key for EC2
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
-      # Ensure repo is clean and updated
-      echo "➡️ Resetting and pulling latest changes..."
-      git reset --hard
-      git pull origin main
+      # 3️⃣ Connect to EC2, clone/pull project, build & run Docker
+      - name: Deploy Docker on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa "${EC2_USER}@${EC2_HOST}" "bash -s" << 'EOF'
+            set -euo pipefail
 
-      # Check if Dockerfile exists
-      if [ ! -f "Dockerfile" ]; then
-        echo "❌ ERROR: No Dockerfile found in $PROJECT_DIR"
-        exit 1
-      fi
+            PROJECT_DIR="/home/ec2-user/neptune_part_match"
+            CONTAINER_NAME="neptune_app"
+            DOCKER_IMAGE="${DOCKER_IMAGE}"
 
-      # Build Docker image
-      echo "➡️ Building Docker image: $DOCKER_IMAGE"
-      docker build -t "$DOCKER_IMAGE" .
+            # Clone if missing
+            if [ ! -d "$PROJECT_DIR/.git" ]; then
+              git clone https://github.com/Sagarregmi73/neptune_part_match.git "$PROJECT_DIR"
+            fi
 
-      # Stop and remove old container if running
-      if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
-        echo "➡️ Stopping old container..."
-        docker stop $CONTAINER_NAME
-        docker rm $CONTAINER_NAME
-      fi
+            cd "$PROJECT_DIR"
 
-      # Clean up dangling images
-      echo "➡️ Cleaning up unused images..."
-      docker image prune -f
+            # Pull latest changes
+            git fetch origin main
+            git reset --hard origin/main
 
-      # Run new container
-      echo "➡️ Starting new container..."
-      docker run -d -p 8443:8000 --name $CONTAINER_NAME $DOCKER_IMAGE
-    EOF
+            # Check Dockerfile exists
+            if [ ! -f Dockerfile ]; then
+              echo "ERROR: Dockerfile not found at $PWD"
+              exit 1
+            fi
+
+            # Build Docker image
+            docker build -t "$DOCKER_IMAGE" .
+
+            # Stop and remove old container if running
+            if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+              docker stop "$CONTAINER_NAME" || true
+              docker rm "$CONTAINER_NAME" || true
+            fi
+
+            # Clean dangling images
+            docker image prune -f
+
+            # Run new container
+            docker run -d -p 8443:8000 --name "$CONTAINER_NAME" "$DOCKER_IMAGE"
+          EOF
