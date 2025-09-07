@@ -13,10 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all app code
 COPY . .
 
-# Copy local .env (optional, only for local dev)
-# For EC2, we'll inject env via docker run
-COPY env/local.env .env
-
 # Expose port
 EXPOSE 8000
 

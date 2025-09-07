@@ -87,5 +87,6 @@ jobs:
               -e POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
               -e POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
               -e MONGO_URI="${{ secrets.MONGO_URI }}" \
+              -e DB_TYPE="${{ secrets.DB_TYPE }}" \
               "$DOCKER_IMAGE"
           EOF
