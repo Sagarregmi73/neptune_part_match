@@ -61,15 +61,12 @@ async def upload_parts(file: UploadFile = File(...)):
     vertices_writer = csv.writer(vertices_output)
     edges_writer = csv.writer(edges_output)
 
-    # Vertices header: ~id, ~label, part_number, specs, notes
+    # Headers
     vertices_writer.writerow(["~id", "~label", "part_number", "specs", "notes"])
-
-    # Edges header: ~id, ~from, ~to, ~label, match_type
     edges_writer.writerow(["~id", "~from", "~to", "~label", "match_type"])
 
     seen_vertices = set()
 
-    # Iterate rows (skip header row in Excel)
     for row in sheet.iter_rows(min_row=2, values_only=True):
         (
             in_part, in_specs, in_notes,
@@ -77,26 +74,23 @@ async def upload_parts(file: UploadFile = File(...)):
             match_type
         ) = row
 
-        # --- Add Input Part vertex ---
+        # Vertices
         if in_part and in_part not in seen_vertices:
             vertices_writer.writerow([in_part, "PartNumber", in_part, in_specs or "", in_notes or ""])
             seen_vertices.add(in_part)
-
-        # --- Add Output Part vertex (if exists) ---
         if out_part and out_part != "-" and out_part not in seen_vertices:
             vertices_writer.writerow([out_part, "PartNumber", out_part, out_specs or "", out_notes or ""])
             seen_vertices.add(out_part)
 
-        # --- Add Edge if match_type is Perfect or Partial ---
+        # Edges
         if out_part and out_part != "-" and match_type in ("Perfect", "Partial"):
             edge_id = f"{in_part}_to_{out_part}"
             edges_writer.writerow([edge_id, in_part, out_part, "replacement", match_type])
 
-    # Reset buffers
     vertices_output.seek(0)
     edges_output.seek(0)
 
-    # --- Upload both files to S3 ---
+    # Upload to S3
     base_name = file.filename.replace(".xlsx", "")
     vertices_key = f"uploads/{base_name}_vertices.csv"
     edges_key = f"uploads/{base_name}_edges.csv"
@@ -104,9 +98,15 @@ async def upload_parts(file: UploadFile = File(...)):
     s3.put_object(Bucket=S3_BUCKET_NAME, Key=vertices_key, Body=vertices_output.getvalue())
     s3.put_object(Bucket=S3_BUCKET_NAME, Key=edges_key, Body=edges_output.getvalue())
 
-    # --- Trigger Neptune Bulk Loader (folder-based) ---
-    loader_response = trigger_bulk_load(
-        s3_file_url=f"s3://{S3_BUCKET_NAME}/uploads/",
+    # Trigger Neptune Bulk Loader for vertices first
+    loader_response_vertices = trigger_bulk_load(
+        s3_file_url=f"s3://{S3_BUCKET_NAME}/{vertices_key}",
+        iam_role_arn=NEPTUNE_IAM_ROLE_ARN
+    )
+
+    # Trigger Neptune Bulk Loader for edges next
+    loader_response_edges = trigger_bulk_load(
+        s3_file_url=f"s3://{S3_BUCKET_NAME}/{edges_key}",
         iam_role_arn=NEPTUNE_IAM_ROLE_ARN
     )
 
@@ -114,5 +114,6 @@ async def upload_parts(file: UploadFile = File(...)):
         "message": "Upload successful",
         "vertices_file": vertices_key,
         "edges_file": edges_key,
-        "loader_response": loader_response
+        "loader_response_vertices": loader_response_vertices,
+        "loader_response_edges": loader_response_edges
     }
