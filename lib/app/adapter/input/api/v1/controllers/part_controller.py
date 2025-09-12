@@ -10,6 +10,8 @@ from lib.core.aws.s3_client import s3, S3_BUCKET_NAME  # your S3 client
 from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 from lib.core.utils.config_loader import NEPTUNE_IAM_ROLE_ARN  # env variable for Neptune
 import csv
+import time
+import requests
 router = APIRouter()
 
 # Inject your repository here (NeptuneRepository/PostgresRepository/MongoRepository)
@@ -49,71 +51,100 @@ def list_parts():
 async def upload_parts(file: UploadFile = File(...)):
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only XLSX files are supported")
-    
-    contents = await file.read()
-    workbook = load_workbook(filename=BytesIO(contents))
-    sheet = workbook.active
+    try:
+        contents = await file.read()
+        workbook = load_workbook(filename=BytesIO(contents))
+        sheet = workbook.active
 
-    # --- Prepare Neptune-compatible vertices and edges CSV ---
-    vertices_output = StringIO()
-    edges_output = StringIO()
+        # use newline="" to avoid blank lines on some platforms
+        vertices_output = StringIO(newline="")
+        edges_output = StringIO(newline="")
 
-    vertices_writer = csv.writer(vertices_output)
-    edges_writer = csv.writer(edges_output)
+        vertices_writer = csv.writer(vertices_output)
+        edges_writer = csv.writer(edges_output)
 
-    # Headers
-    vertices_writer.writerow(["~id", "~label", "part_number", "specs", "notes"])
-    edges_writer.writerow(["~id", "~from", "~to", "~label", "match_type"])
+        # Headers
+        vertices_writer.writerow(["~id", "~label", "part_number", "specs", "notes"])
+        edges_writer.writerow(["~id", "~from", "~to", "~label", "match_type"])
 
-    seen_vertices = set()
+        seen_vertices = set()
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            (in_part, in_specs, in_notes, out_part, out_specs, out_notes, match_type) = row
 
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        (
-            in_part, in_specs, in_notes,
-            out_part, out_specs, out_notes,
-            match_type
-        ) = row
+            # Vertices
+            if in_part and in_part not in seen_vertices:
+                vertices_writer.writerow([in_part, "PartNumber", in_part, in_specs or "", in_notes or ""])
+                seen_vertices.add(in_part)
+            if out_part and out_part != "-" and out_part not in seen_vertices:
+                vertices_writer.writerow([out_part, "PartNumber", out_part, out_specs or "", out_notes or ""])
+                seen_vertices.add(out_part)
 
-        # Vertices
-        if in_part and in_part not in seen_vertices:
-            vertices_writer.writerow([in_part, "PartNumber", in_part, in_specs or "", in_notes or ""])
-            seen_vertices.add(in_part)
-        if out_part and out_part != "-" and out_part not in seen_vertices:
-            vertices_writer.writerow([out_part, "PartNumber", out_part, out_specs or "", out_notes or ""])
-            seen_vertices.add(out_part)
+            # Edges
+            if out_part and out_part != "-" and match_type in ("Perfect", "Partial"):
+                edge_id = f"{in_part}_to_{out_part}"
+                edges_writer.writerow([edge_id, in_part, out_part, "replacement", match_type])
 
-        # Edges
-        if out_part and out_part != "-" and match_type in ("Perfect", "Partial"):
-            edge_id = f"{in_part}_to_{out_part}"
-            edges_writer.writerow([edge_id, in_part, out_part, "replacement", match_type])
+        vertices_output.seek(0)
+        edges_output.seek(0)
 
-    vertices_output.seek(0)
-    edges_output.seek(0)
+        base_name = file.filename.replace(".xlsx", "")
+        vertices_key = f"uploads/{base_name}_vertices.csv"
+        edges_key = f"uploads/{base_name}_edges.csv"
 
-    # Upload to S3
-    base_name = file.filename.replace(".xlsx", "")
-    vertices_key = f"uploads/{base_name}_vertices.csv"
-    edges_key = f"uploads/{base_name}_edges.csv"
+        # Upload and confirm via head_object
+        s3.put_object(Bucket=S3_BUCKET_NAME, Key=vertices_key, Body=vertices_output.getvalue())
+        s3.put_object(Bucket=S3_BUCKET_NAME, Key=edges_key, Body=edges_output.getvalue())
 
-    s3.put_object(Bucket=S3_BUCKET_NAME, Key=vertices_key, Body=vertices_output.getvalue())
-    s3.put_object(Bucket=S3_BUCKET_NAME, Key=edges_key, Body=edges_output.getvalue())
+        # Confirm objects exist (retry a few times)
+        def wait_for_s3(bucket, key, retries=5, backoff=1.0):
+            for i in range(retries):
+                try:
+                    s3.head_object(Bucket=bucket, Key=key)
+                    return True
+                except Exception:
+                    time.sleep(backoff * (i + 1))
+            return False
 
-    # Trigger Neptune Bulk Loader for vertices first
-    loader_response_vertices = trigger_bulk_load(
-        s3_file_url=f"s3://{S3_BUCKET_NAME}/{vertices_key}",
-        iam_role_arn=NEPTUNE_IAM_ROLE_ARN
-    )
+        if not wait_for_s3(S3_BUCKET_NAME, vertices_key):
+            raise HTTPException(status_code=500, detail=f"Uploaded vertices file not visible: {vertices_key}")
+        if not wait_for_s3(S3_BUCKET_NAME, edges_key):
+            raise HTTPException(status_code=500, detail=f"Uploaded edges file not visible: {edges_key}")
 
-    # Trigger Neptune Bulk Loader for edges next
-    loader_response_edges = trigger_bulk_load(
-        s3_file_url=f"s3://{S3_BUCKET_NAME}/{edges_key}",
-        iam_role_arn=NEPTUNE_IAM_ROLE_ARN
-    )
+        # Debug prints (view in docker logs)
+        print("Uploaded files to S3:")
+        print(f"s3://{S3_BUCKET_NAME}/{vertices_key}")
+        print(f"s3://{S3_BUCKET_NAME}/{edges_key}")
+        print("Triggering Neptune loader for vertices then edges...")
 
-    return {
-        "message": "Upload successful",
-        "vertices_file": vertices_key,
-        "edges_file": edges_key,
-        "loader_response_vertices": loader_response_vertices,
-        "loader_response_edges": loader_response_edges
-    }
+        try:
+            loader_response_vertices = trigger_bulk_load(
+                s3_path=f"s3://{S3_BUCKET_NAME}/{vertices_key}",
+                iam_role_arn=NEPTUNE_IAM_ROLE_ARN
+            )
+        except Exception as e:
+            # attach loader error details
+            print("Vertices loader failed:", str(e))
+            raise HTTPException(status_code=500, detail=f"Vertices loader failed: {str(e)}")
+
+        try:
+            loader_response_edges = trigger_bulk_load(
+                s3_path=f"s3://{S3_BUCKET_NAME}/{edges_key}",
+                iam_role_arn=NEPTUNE_IAM_ROLE_ARN
+            )
+        except Exception as e:
+            print("Edges loader failed:", str(e))
+            raise HTTPException(status_code=500, detail=f"Edges loader failed: {str(e)}")
+
+        return {
+            "message": "Upload successful",
+            "vertices_file": vertices_key,
+            "edges_file": edges_key,
+            "loader_response_vertices": loader_response_vertices,
+            "loader_response_edges": loader_response_edges
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print("Unhandled error in upload_parts:", repr(exc))
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(exc)}")
