@@ -3,6 +3,10 @@ from lib.app.application.services.repository_interface import RepositoryInterfac
 from lib.app.domain.entities.part_number import PartNumber
 
 class CrudPartUseCase:
+    """
+    Use case layer for PartNumber CRUD operations.
+    """
+
     def __init__(self, repository: RepositoryInterface):
         self.repository = repository
 

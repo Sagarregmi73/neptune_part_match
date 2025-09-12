@@ -1,5 +1,3 @@
-# lib/app/domain/dtos/match_dto.py
-
 from pydantic import BaseModel
 
 class MatchDTO(BaseModel):

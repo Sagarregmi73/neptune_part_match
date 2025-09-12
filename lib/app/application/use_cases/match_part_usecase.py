@@ -3,6 +3,10 @@ from lib.app.application.services.repository_interface import RepositoryInterfac
 from lib.app.domain.entities.match import Match
 
 class MatchPartUseCase:
+    """
+    Use case layer for Match CRUD operations.
+    """
+
     def __init__(self, repository: RepositoryInterface):
         self.repository = repository
 
