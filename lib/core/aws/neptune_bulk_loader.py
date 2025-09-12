@@ -87,7 +87,7 @@ def trigger_bulk_load(s3_path: str, iam_role_arn: str, wait_for_head: bool = Tru
             "format": "csv",
             "iamRoleArn": iam_role_arn,
             "region": AWS_REGION,
-            "failOnError": True
+            "failOnError": "TRUE"
         }
 
         loader_url = f"https://{NEPTUNE_ENDPOINT}:{NEPTUNE_PORT}/loader"
