@@ -9,24 +9,23 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
     :return: The Neptune bulk loader response
     """
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
-    neptune_port = os.getenv("NEPTUNE_PORT", "8182")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
+    s3_bucket_region = os.getenv("AWS_REGION")  # or the region your S3 bucket is in
 
-    if not (neptune_endpoint and iam_role_arn):
-        raise Exception("NEPTUNE_ENDPOINT and NEPTUNE_IAM_ROLE_ARN must be set in environment")
+    if not (neptune_endpoint and iam_role_arn and s3_bucket_region):
+        raise Exception("NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, and AWS_REGION must be set in environment")
 
-    # ✅ Correct service name: 'neptunedata' (no dash)
-    client = boto3.client("neptunedata", region_name=os.getenv("AWS_REGION"))
+    client = boto3.client("neptunedata", region_name=s3_bucket_region)
 
     response = client.start_loader_job(
         source=s3_input_uri,
         format="csv",
-        roleArn=iam_role_arn,
-        region=os.getenv("AWS_REGION"),
+        iamRoleArn=iam_role_arn,
+        s3BucketRegion=s3_bucket_region,
+        mode=mode,
         failOnError=True,
         parallelism="MEDIUM",
-        updateSingleCardinalityProperties=True,
-        mode=mode,
+        updateSingleCardinalityProperties=True
     )
 
     return response
