@@ -15,7 +15,8 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
     if not (neptune_endpoint and iam_role_arn):
         raise Exception("NEPTUNE_ENDPOINT and NEPTUNE_IAM_ROLE_ARN must be set in environment")
 
-    client = boto3.client("neptune-data", region_name=os.getenv("AWS_REGION"))
+    # ✅ Correct service name: 'neptunedata' (no dash)
+    client = boto3.client("neptunedata", region_name=os.getenv("AWS_REGION"))
 
     response = client.start_loader_job(
         source=s3_input_uri,
