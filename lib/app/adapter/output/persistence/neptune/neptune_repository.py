@@ -1,14 +1,14 @@
 from lib.app.application.services.repository_interface import RepositoryInterface
-from gremlin_python.process.graph_traversal import __
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 from lib.core.aws.neptune_client import get_neptune_connection
+from gremlin_python.process.graph_traversal import __
 
 class NeptuneRepository(RepositoryInterface):
     def __init__(self):
         self.g, self.connection = get_neptune_connection()
 
-    # Part CRUD
+    # PART CRUD
     def create_part(self, part: PartNumber) -> PartNumber:
         self.g.addV("PartNumber")\
             .property("id", part.part_number)\
@@ -37,11 +37,15 @@ class NeptuneRepository(RepositoryInterface):
         vertices = self.g.V().hasLabel("PartNumber").toList()
         return [PartNumber(v["id"], v["specs"], v["notes"]) for v in vertices]
 
-    # Match CRUD
+    # MATCH CRUD
     def create_match(self, match: Match) -> Match:
         self.g.V().has("PartNumber", "id", match.source)\
-            .addE("MATCHED").to(self.g.V().has("PartNumber", "id", match.target))\
-            .property("match_type", match.match_type).next()
+            .as_("a")\
+            .V().has("PartNumber", "id", match.target)\
+            .coalesce(
+                __.inE("MATCHED").where(__.outV().as_("a")),
+                __.addE("MATCHED").from_("a").property("match_type", match.match_type)
+            ).next()
         return match
 
     def get_match(self, source: str, target: str):
@@ -67,4 +71,4 @@ class NeptuneRepository(RepositoryInterface):
 
     def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
-        return [Match(e.outV.id, e.inV.id, e["match_type"]) for e in edges]
+        return [Match(e.outV["id"], e.inV["id"], e["match_type"]) for e in edges]

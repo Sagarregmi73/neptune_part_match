@@ -1,7 +1,6 @@
-# lib/app/application/services/match_service.py
 from lib.app.application.services.repository_interface import RepositoryInterface
-from lib.app.domain.services.match_logic import MatchLogic
 from lib.app.domain.entities.match import Match
+from lib.app.domain.services.match_logic import MatchLogic
 from lib.core.logging import logger
 
 class MatchService:

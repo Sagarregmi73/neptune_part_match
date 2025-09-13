@@ -1,12 +1,7 @@
-# lib/app/application/use_cases/match_part_usecase.py
 from lib.app.application.services.repository_interface import RepositoryInterface
 from lib.app.domain.entities.match import Match
 
 class MatchPartUseCase:
-    """
-    Use case layer for Match CRUD operations.
-    """
-
     def __init__(self, repository: RepositoryInterface):
         self.repository = repository
 
@@ -24,3 +19,15 @@ class MatchPartUseCase:
 
     def list_matches(self):
         return self.repository.list_matches()
+
+    # New: bidirectional search
+    def get_matches_for_part(self, part_number: str):
+        edges_out = self.repository.g.V().has("PartNumber", "id", part_number)\
+                       .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
+        edges_in = self.repository.g.V().has("PartNumber", "id", part_number)\
+                       .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
+
+        matches = []
+        for e in edges_out + edges_in:
+            matches.append(Match(e["e"].outV["id"], e["e"].inV["id"], e["e"]["match_type"]))
+        return matches

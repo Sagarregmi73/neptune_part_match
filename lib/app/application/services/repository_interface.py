@@ -1,83 +1,38 @@
-# lib/app/application/services/repository_interface.py
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 
 class RepositoryInterface(ABC):
-    """
-    Abstract repository interface for CRUD operations on PartNumber and Match.
-    Any concrete repository (Neptune/Postgres/Mongo) must implement these methods.
-    """
 
-    # ------------------- PART NUMBER CRUD -------------------
+    # PART CRUD
     @abstractmethod
-    def create_part(self, part: PartNumber) -> PartNumber:
-        """
-        Create or upsert a PartNumber vertex in the database.
-        """
-        pass
+    def create_part(self, part: PartNumber) -> PartNumber: pass
 
     @abstractmethod
-    def get_part(self, part_number: str) -> Optional[PartNumber]:
-        """
-        Retrieve a PartNumber by its unique ID.
-        """
-        pass
+    def get_part(self, part_number: str) -> Optional[PartNumber]: pass
 
     @abstractmethod
-    def update_part(self, part: PartNumber) -> PartNumber:
-        """
-        Update an existing PartNumber's properties.
-        """
-        pass
+    def update_part(self, part: PartNumber) -> PartNumber: pass
 
     @abstractmethod
-    def delete_part(self, part_number: str) -> bool:
-        """
-        Delete a PartNumber from the database.
-        """
-        pass
+    def delete_part(self, part_number: str) -> bool: pass
 
     @abstractmethod
-    def list_parts(self) -> List[PartNumber]:
-        """
-        List all PartNumbers in the database.
-        """
-        pass
+    def list_parts(self) -> List[PartNumber]: pass
 
-    # ------------------- MATCH CRUD -------------------
+    # MATCH CRUD
     @abstractmethod
-    def create_match(self, match: Match) -> Match:
-        """
-        Create a Match edge (replacement) between PartNumbers.
-        """
-        pass
+    def create_match(self, match: Match) -> Match: pass
 
     @abstractmethod
-    def get_match(self, source: str, target: str) -> Optional[Match]:
-        """
-        Retrieve a Match between two PartNumbers.
-        """
-        pass
+    def get_match(self, source: str, target: str) -> Optional[Match]: pass
 
     @abstractmethod
-    def update_match(self, match: Match) -> Match:
-        """
-        Update the match_type of an existing Match edge.
-        """
-        pass
+    def update_match(self, match: Match) -> Match: pass
 
     @abstractmethod
-    def delete_match(self, source: str, target: str) -> bool:
-        """
-        Delete a Match edge between two PartNumbers.
-        """
-        pass
+    def delete_match(self, source: str, target: str) -> bool: pass
 
     @abstractmethod
-    def list_matches(self) -> List[Match]:
-        """
-        List all Match edges in the database.
-        """
-        pass
+    def list_matches(self) -> List[Match]: pass
