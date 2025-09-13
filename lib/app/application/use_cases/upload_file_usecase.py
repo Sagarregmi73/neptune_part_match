@@ -65,8 +65,14 @@ class UploadFileUseCase:
 
             vertices_s3 = upload_file_to_s3(vertices_file.name, f"vertices/{filename}.csv")
             edges_s3 = upload_file_to_s3(edges_file.name, f"edges/{filename}.csv")
-            trigger_bulk_load(vertices_s3, edges_s3)
 
-            return {"status": "success", "vertices_s3": vertices_s3, "edges_s3": edges_s3}
+            loader_results = trigger_bulk_load(vertices_s3, edges_s3)
+
+            return {
+                    "status": "success",
+                    "vertices_s3": vertices_s3,
+                    "edges_s3": edges_s3,
+                    "loader_results": loader_results
+                   } 
 
         return {"status": "success", "vertices_created": len(vertices_created), "edges_created": edges_created}
