@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv("local.env")  # must be first
+
 from fastapi import FastAPI
 from lib.app.adapter.input.api.v1.routers import api_router
 
