@@ -1,36 +1,31 @@
 import os
-import requests
-import json
+import boto3
 
-NEPTUNE_ENDPOINT = os.getenv("NEPTUNE_ENDPOINT")
-NEPTUNE_PORT = os.getenv("NEPTUNE_PORT", "8182")
-NEPTUNE_REGION = os.getenv("AWS_REGION")
-IAM_ROLE_ARN = os.getenv("NEPTUNE_IAM_ROLE_ARN")
-
-def start_bulk_load(s3_path: str, data_format="csv"):
+def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
     """
-    Trigger Neptune bulk loader for a given S3 file or folder.
+    Trigger a Neptune bulk load job.
+    :param s3_input_uri: The S3 path where vertices/edges CSV files are uploaded.
+    :param mode: LOAD | RESUME | NEW (default: RESUME)
+    :return: The Neptune bulk loader response
     """
-    if not IAM_ROLE_ARN:
-        raise Exception("NEPTUNE_IAM_ROLE_ARN is not set in environment")
+    neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
+    neptune_port = os.getenv("NEPTUNE_PORT", "8182")
+    iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
 
-    loader_url = f"https://{NEPTUNE_ENDPOINT}:{NEPTUNE_PORT}/loader"
+    if not (neptune_endpoint and iam_role_arn):
+        raise Exception("NEPTUNE_ENDPOINT and NEPTUNE_IAM_ROLE_ARN must be set in environment")
 
-    payload = {
-        "source": s3_path,
-        "format": data_format,
-        "iamRoleArn": IAM_ROLE_ARN,
-        "region": NEPTUNE_REGION,
-        "failOnError": "FALSE",
-        "parallelism": "LOW",
-        "updateSingleCardinalityProperties": "FALSE",
-        "queueRequest": "TRUE"
-    }
+    client = boto3.client("neptune-data", region_name=os.getenv("AWS_REGION"))
 
-    headers = {"Content-Type": "application/json"}
-    response = requests.post(loader_url, headers=headers, data=json.dumps(payload))
+    response = client.start_loader_job(
+        source=s3_input_uri,
+        format="csv",
+        roleArn=iam_role_arn,
+        region=os.getenv("AWS_REGION"),
+        failOnError=True,
+        parallelism="MEDIUM",
+        updateSingleCardinalityProperties=True,
+        mode=mode,
+    )
 
-    if response.status_code != 200:
-        raise Exception(f"Failed to start bulk load: {response.text}")
-
-    return response.json()
+    return response
