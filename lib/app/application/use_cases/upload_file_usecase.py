@@ -1,5 +1,7 @@
 import pandas as pd
 import tempfile
+import os
+import uuid
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
@@ -38,11 +40,14 @@ class UploadFileUseCase:
                 self.repo.create_match(Match(input_part, output_part, match_type))
                 edges_created += 1
 
-        # Optional CSV backup
         if self.backup_to_s3:
+            job_id = str(uuid.uuid4())
+            job_prefix = f"bulk_load/{job_id}/"
+
             vertices_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
             edges_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
 
+            # Build vertices.csv
             vertices_data = []
             for row in df.itertuples():
                 if getattr(row, "Input_Part_Number", None):
@@ -56,6 +61,7 @@ class UploadFileUseCase:
             pd.DataFrame(vertices_data).drop_duplicates(subset="part_number")\
                 .to_csv(vertices_file.name, index=False)
 
+            # Build edges.csv
             edges_file.write(b"source,target,match_type\n")
             for row in df.itertuples():
                 if getattr(row, "Match_Type", None):
@@ -63,16 +69,25 @@ class UploadFileUseCase:
                     edges_file.write(f"{row.Input_Part_Number},{row.Output_Part_Number},{match_type}\n".encode())
             edges_file.close()
 
-            vertices_s3 = upload_file_to_s3(vertices_file.name, f"vertices/{filename}.csv")
-            edges_s3 = upload_file_to_s3(edges_file.name, f"edges/{filename}.csv")
+            # Upload to S3
+            vertices_s3 = upload_file_to_s3(vertices_file.name, f"{job_prefix}vertices.csv")
+            edges_s3 = upload_file_to_s3(edges_file.name, f"{job_prefix}edges.csv")
 
-            loader_results = trigger_bulk_load(vertices_s3, edges_s3)
+            # Trigger bulk load on **folder**, not individual files
+            bucket_name = os.getenv("S3_BUCKET_NAME")
+            s3_folder = f"s3://{bucket_name}/{job_prefix}"
+            loader_results = trigger_bulk_load(s3_folder)
+
+            # Delete temp files
+            os.remove(vertices_file.name)
+            os.remove(edges_file.name)
 
             return {
-                    "status": "success",
-                    "vertices_s3": vertices_s3,
-                    "edges_s3": edges_s3,
-                    "loader_results": loader_results
-                   } 
+                "status": "success",
+                "vertices_s3": vertices_s3,
+                "edges_s3": edges_s3,
+                "s3_folder": s3_folder,
+                "loader_results": loader_results
+            }
 
         return {"status": "success", "vertices_created": len(vertices_created), "edges_created": edges_created}

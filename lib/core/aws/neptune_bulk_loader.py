@@ -1,23 +1,18 @@
 import os
 import boto3
-import requests
 import socket
 import ssl
 from botocore.exceptions import BotoCoreError, ClientError
 
 def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
     """
-    Trigger a Neptune bulk load job safely, handling VPC and endpoint issues.
-
-    :param s3_input_uri: The S3 path where vertices/edges CSV files are uploaded.
-    :param mode: LOAD | RESUME | NEW (default: RESUME)
-    :return: The Neptune bulk loader response
+    Trigger a Neptune bulk load job safely.
+    s3_input_uri: S3 folder URI (NOT individual file)
     """
-    neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")  # cluster HTTPS endpoint
+    neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
     s3_bucket_region = os.getenv("AWS_REGION")
 
-    # Validate environment variables
     if not neptune_endpoint:
         raise Exception("Environment variable NEPTUNE_ENDPOINT is not set.")
     if not iam_role_arn:
@@ -41,17 +36,19 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
     except Exception as e:
         raise Exception(f"Cannot reach Neptune endpoint '{neptune_endpoint}:8182'. Original error: {e}")
 
-    # Initialize Neptune Data client
-    client = boto3.client("neptunedata", region_name=s3_bucket_region, endpoint_url=f"https://{neptune_endpoint}:8182")
+    client = boto3.client(
+        "neptunedata",
+        region_name=s3_bucket_region,
+        endpoint_url=f"https://{neptune_endpoint}:8182"
+    )
 
-    # Trigger bulk load
     try:
         response = client.start_loader_job(
             source=s3_input_uri,
             format="csv",
             iamRoleArn=iam_role_arn,
             s3BucketRegion=s3_bucket_region,
-            mode=mode,
+            mode=mode,  # "RESUME" or "NEW"
             failOnError=True,
             parallelism="MEDIUM",
             updateSingleCardinalityProperties=True
