@@ -12,14 +12,16 @@ class UploadFileUseCase:
         self.backup_to_s3 = backup_to_s3
 
     def execute(self, file_bytes, filename: str):
-        df = pd.read_excel(file_bytes)
+        df = pd.read_excel(file_bytes, header=[0,1])  # two header rows
         vertices_created = set()
         edges_created = 0
 
-        # Combine input specs/notes as single strings
-        for row in df.itertuples(index=False):
-            input_part = getattr(row, "Input_Part_Number", None)
-            output_part = getattr(row, "Output_Part_Number", None)
+        # Loop through rows starting from row 3 (index 2)
+        for row in df.iloc[2:].itertuples(index=False):
+            input_part = getattr(row, "Input Part Number", None)
+            output_part = getattr(row, "Output Part Number", None)
+
+            # Combine specs and notes into strings
             input_specs = ",".join([str(getattr(row, f"Input Spec {i}", "")) for i in range(1,6)])
             input_notes = ",".join([str(getattr(row, f"Input Note {i}", "")) for i in range(1,4)])
             output_specs = ",".join([str(getattr(row, f"Output Spec {i}", "")) for i in range(1,6)])
@@ -42,20 +44,24 @@ class UploadFileUseCase:
                 self.repo.create_match(Match(input_part, output_part, match_type))
                 edges_created += 1
 
-        # Optional S3 backup
+        # Optional S3 backup and bulk load
         if self.backup_to_s3:
             job_id = str(uuid.uuid4())
             job_prefix = f"bulk_load/{job_id}/"
+
+            # Create CSV files
             vertices_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
             edges_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
 
             # vertices.csv
             vertices_data = []
-            for row in df.itertuples(index=False):
+            for row in df.iloc[2:].itertuples(index=False):
                 for part, specs, notes in [
-                    (getattr(row, "Input_Part_Number", None), ",".join([str(getattr(row, f"Input Spec {i}", "")) for i in range(1,6)]),
+                    (getattr(row, "Input Part Number", None),
+                     ",".join([str(getattr(row, f"Input Spec {i}", "")) for i in range(1,6)]),
                      ",".join([str(getattr(row, f"Input Note {i}", "")) for i in range(1,4)])),
-                    (getattr(row, "Output_Part_Number", None), ",".join([str(getattr(row, f"Output Spec {i}", "")) for i in range(1,6)]),
+                    (getattr(row, "Output Part Number", None),
+                     ",".join([str(getattr(row, f"Output Spec {i}", "")) for i in range(1,6)]),
                      ",".join([str(getattr(row, f"Output Note {i}", "")) for i in range(1,4)]))
                 ]:
                     if part and part != "-":
@@ -64,16 +70,16 @@ class UploadFileUseCase:
 
             # edges.csv
             edges_file.write(b"~from,~to,~label,match_type:String\n")
-            for row in df.itertuples(index=False):
-                input_part = getattr(row, "Input_Part_Number", None)
-                output_part = getattr(row, "Output_Part_Number", None)
+            for row in df.iloc[2:].itertuples(index=False):
+                input_part = getattr(row, "Input Part Number", None)
+                output_part = getattr(row, "Output Part Number", None)
                 match_type_raw = getattr(row, "Match Type", None)
                 if input_part and output_part and output_part != "-" and match_type_raw:
                     match_type = "Replacement" if match_type_raw in ["Perfect", "Partial"] else "No Replacement"
                     edges_file.write(f"{input_part},{output_part},Match,{match_type}\n".encode())
             edges_file.close()
 
-            # Upload
+            # Upload to S3
             vertices_s3 = upload_file_to_s3(vertices_file.name, f"{job_prefix}vertices.csv")
             edges_s3 = upload_file_to_s3(edges_file.name, f"{job_prefix}edges.csv")
             bucket_name = os.getenv("S3_BUCKET_NAME")
@@ -84,7 +90,14 @@ class UploadFileUseCase:
             os.remove(vertices_file.name)
             os.remove(edges_file.name)
 
-            return {"status":"success","vertices_count":len(vertices_created),"edges_count":edges_created,
-                    "vertices_s3":vertices_s3,"edges_s3":edges_s3,"s3_folder":s3_folder,"loader_results":loader_results}
+            return {
+                "status":"success",
+                "vertices_count":len(vertices_created),
+                "edges_count":edges_created,
+                "vertices_s3":vertices_s3,
+                "edges_s3":edges_s3,
+                "s3_folder":s3_folder,
+                "loader_results":loader_results
+            }
 
         return {"status":"success","vertices_created":len(vertices_created),"edges_created":edges_created}

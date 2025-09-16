@@ -4,7 +4,7 @@ import os
 
 def get_neptune_connection():
     """
-    Returns a Gremlin traversal source and the connection object.
+    Returns a Gremlin traversal source and the connection object for Neptune.
     """
     endpoint = os.getenv("NEPTUNE_ENDPOINT")
     port = os.getenv("NEPTUNE_PORT", 8182)
@@ -12,4 +12,4 @@ def get_neptune_connection():
 
     graph = Graph()
     connection = graph.traversal().withRemote(DriverRemoteConnection(url, 'g'))
-    return connection, connection
+    return connection, connection  # traversal source, connection object

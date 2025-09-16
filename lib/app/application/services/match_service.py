@@ -42,3 +42,17 @@ class MatchService:
         result = self.repository.delete_match(source, target)
         logger.info(f"Match deleted: source={source}, target={target}, success={result}")
         return result
+
+    # ------------------- BIDIRECTIONAL SEARCH -------------------
+    def search_matches_for_part(self, part_number: str):
+        """
+        Returns all matches where part_number is source or target.
+        """
+        edges_out = self.repository.g.V().has("PartNumber", "id", part_number)\
+                       .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
+        edges_in = self.repository.g.V().has("PartNumber", "id", part_number)\
+                       .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
+        matches = []
+        for e in edges_out + edges_in:
+            matches.append(Match(e["e"].outV["id"], e["e"].inV["id"], e["e"]["match_type"]))
+        return matches

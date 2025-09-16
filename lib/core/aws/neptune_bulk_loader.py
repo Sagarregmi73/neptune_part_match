@@ -1,38 +1,34 @@
 import os
-import boto3
 import socket
 import ssl
+import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
     """
-    Trigger a Neptune bulk load job safely.
-    s3_input_uri: S3 folder URI (NOT individual file)
+    Trigger a Neptune bulk load job from S3 folder.
+    :param s3_input_uri: S3 folder URI (NOT individual file)
+    :param mode: "RESUME" or "NEW"
+    :return: boto3 response
     """
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
     s3_bucket_region = os.getenv("AWS_REGION")
 
-    if not neptune_endpoint:
-        raise Exception("Environment variable NEPTUNE_ENDPOINT is not set.")
-    if not iam_role_arn:
-        raise Exception("Environment variable NEPTUNE_IAM_ROLE_ARN is not set.")
-    if not s3_bucket_region:
-        raise Exception("Environment variable AWS_REGION is not set.")
+    if not all([neptune_endpoint, iam_role_arn, s3_bucket_region]):
+        raise Exception("Environment variables NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set")
 
-    # Verify endpoint DNS resolution
+    # DNS & HTTPS check
     try:
         socket.gethostbyname(neptune_endpoint)
-        print(f"DNS resolution for {neptune_endpoint} successful")
     except socket.gaierror:
         raise Exception(f"Cannot resolve Neptune endpoint '{neptune_endpoint}'.")
 
-    # Check HTTPS connectivity
     try:
         context = ssl.create_default_context()
         with socket.create_connection((neptune_endpoint, 8182), timeout=10) as sock:
             with context.wrap_socket(sock, server_hostname=neptune_endpoint):
-                print(f"Neptune endpoint {neptune_endpoint}:8182 reachable over HTTPS")
+                pass
     except Exception as e:
         raise Exception(f"Cannot reach Neptune endpoint '{neptune_endpoint}:8182'. Original error: {e}")
 
@@ -48,12 +44,11 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
             format="csv",
             iamRoleArn=iam_role_arn,
             s3BucketRegion=s3_bucket_region,
-            mode=mode,  # "RESUME" or "NEW"
+            mode=mode,
             failOnError=True,
             parallelism="MEDIUM",
             updateSingleCardinalityProperties=True
         )
-        print("Neptune bulk load started successfully")
         return response
     except (BotoCoreError, ClientError) as e:
         raise Exception(f"Failed to start Neptune bulk load. Error: {e}")

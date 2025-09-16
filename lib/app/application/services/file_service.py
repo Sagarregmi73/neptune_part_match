@@ -1,8 +1,16 @@
-from lib.app.application.use_cases.upload_file_usecase import UploadFileUseCase
+# lib/app/application/services/file_service.py
 
 class FileService:
-    def __init__(self, backup_to_s3: bool = True):
-        self.upload_usecase = UploadFileUseCase(backup_to_s3=backup_to_s3)
+    """
+    Service for handling file-related operations.
+    """
+    def __init__(self):
+        pass
 
-    def execute(self, file_bytes: bytes, filename: str):
-        return self.upload_usecase.execute(file_bytes, filename)
+    def process_file(self, file_bytes, filename: str):
+        """
+        Example method to process a file.
+        Replace with your actual logic.
+        """
+        # For example, just return the filename
+        return {"filename": filename, "status": "processed"}

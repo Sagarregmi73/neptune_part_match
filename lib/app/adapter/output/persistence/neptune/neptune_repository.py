@@ -8,7 +8,7 @@ class NeptuneRepository(RepositoryInterface):
     def __init__(self):
         self.g, self.connection = get_neptune_connection()
 
-    # PART CRUD
+    # -------------------- PART CRUD --------------------
     def create_part(self, part: PartNumber) -> PartNumber:
         self.g.addV("PartNumber")\
             .property("id", part.part_number)\
@@ -37,10 +37,9 @@ class NeptuneRepository(RepositoryInterface):
         vertices = self.g.V().hasLabel("PartNumber").toList()
         return [PartNumber(v["id"], v["specs"], v["notes"]) for v in vertices]
 
-    # MATCH CRUD
+    # -------------------- MATCH CRUD --------------------
     def create_match(self, match: Match) -> Match:
-        self.g.V().has("PartNumber", "id", match.source)\
-            .as_("a")\
+        self.g.V().has("PartNumber", "id", match.source).as_("a")\
             .V().has("PartNumber", "id", match.target)\
             .coalesce(
                 __.inE("MATCHED").where(__.outV().as_("a")),
@@ -72,3 +71,14 @@ class NeptuneRepository(RepositoryInterface):
     def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
         return [Match(e.outV["id"], e.inV["id"], e["match_type"]) for e in edges]
+
+    # -------------------- BIDIRECTIONAL SEARCH --------------------
+    def get_matches_for_part(self, part_number: str):
+        edges_out = self.g.V().has("PartNumber", "id", part_number)\
+                       .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
+        edges_in = self.g.V().has("PartNumber", "id", part_number)\
+                       .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
+        matches = []
+        for e in edges_out + edges_in:
+            matches.append(Match(e["e"].outV["id"], e["e"].inV["id"], e["e"]["match_type"]))
+        return matches

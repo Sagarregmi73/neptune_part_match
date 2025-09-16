@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from lib.app.domain.dtos.match_dto import MatchDTO
 from lib.app.domain.entities.match import Match
@@ -15,7 +15,8 @@ def create_match(match_dto: MatchDTO):
 @router.get("/{source}/{target}", response_model=MatchDTO)
 def get_match(source: str, target: str):
     match = usecase.get_match(source, target)
-    if not match: raise HTTPException(404, "Match not found")
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
     return MatchDTO(**vars(match))
 
 @router.put("/{source}/{target}", response_model=MatchDTO)
@@ -30,7 +31,6 @@ def delete_match(source: str, target: str):
 def list_matches():
     return [MatchDTO(**vars(m)) for m in usecase.list_matches()]
 
-# Bidirectional search
 @router.get("/search/{part_number}", response_model=List[MatchDTO])
 def search_matches(part_number: str):
     matches = usecase.get_matches_for_part(part_number)
