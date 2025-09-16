@@ -19,7 +19,7 @@ class UploadFileUseCase:
         vertices_created = set()
         edges_created = 0
 
-        # Normal repo persistence (optional)
+        # Normal repo persistence
         for row in df.itertuples():
             input_part = getattr(row, "Input_Part_Number", None)
             output_part = getattr(row, "Output_Part_Number", None)
@@ -42,7 +42,6 @@ class UploadFileUseCase:
                 self.repo.create_match(Match(input_part, output_part, match_type))
                 edges_created += 1
 
-        # Bulk load prep
         if self.backup_to_s3:
             job_id = str(uuid.uuid4())
             job_prefix = f"bulk_load/{job_id}/"
@@ -50,44 +49,48 @@ class UploadFileUseCase:
             vertices_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
             edges_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
 
-            # Build vertices.csv (Neptune bulk load format)
+            # Build vertices.csv
             vertices_data = []
             for row in df.itertuples():
-                if getattr(row, "Input_Part_Number", None):
-                    vertices_data.append({
-                        "~id": row.Input_Part_Number,
-                        "~label": "Part",
-                        "part_number:String": row.Input_Part_Number,
-                        "specs:String": getattr(row, "Input_Specs", ""),
-                        "notes:String": getattr(row, "Input_Notes", "")
-                    })
-                if getattr(row, "Output_Part_Number", None) and row.Output_Part_Number != "-":
-                    vertices_data.append({
-                        "~id": row.Output_Part_Number,
-                        "~label": "Part",
-                        "part_number:String": row.Output_Part_Number,
-                        "specs:String": getattr(row, "Output_Specs", ""),
-                        "notes:String": getattr(row, "Output_Notes", "")
-                    })
+                for part, specs, notes in [
+                    (getattr(row, "Input_Part_Number", None), getattr(row, "Input_Specs", ""), getattr(row, "Input_Notes", "")),
+                    (getattr(row, "Output_Part_Number", None), getattr(row, "Output_Specs", ""), getattr(row, "Output_Notes", ""))
+                ]:
+                    if part and part != "-":
+                        vertices_data.append({
+                            "~id": part,
+                            "~label": "Part",
+                            "part_number:String": part,
+                            "specs:String": specs,
+                            "notes:String": notes
+                        })
 
-            pd.DataFrame(vertices_data).drop_duplicates(subset="~id") \
-                .to_csv(vertices_file.name, index=False)
+            vertices_df = pd.DataFrame(vertices_data).drop_duplicates(subset="~id")
+            if vertices_df.empty:
+                raise Exception("No valid vertices found. Check your input file.")
+            vertices_df.to_csv(vertices_file.name, index=False)
 
-            # Build edges.csv (Neptune bulk load format)
+            # Build edges.csv
             edges_file.write(b"~from,~to,~label,match_type:String\n")
+            edge_count = 0
             for row in df.itertuples():
-                if getattr(row, "Match_Type", None) and row.Output_Part_Number and row.Output_Part_Number != "-":
-                    match_type = "Replacement" if row.Match_Type in ["Perfect", "Partial"] else "No Replacement"
-                    edges_file.write(
-                        f"{row.Input_Part_Number},{row.Output_Part_Number},Match,{match_type}\n".encode()
-                    )
+                input_part = getattr(row, "Input_Part_Number", None)
+                output_part = getattr(row, "Output_Part_Number", None)
+                match_type_raw = getattr(row, "Match_Type", None)
+                if input_part and output_part and output_part != "-" and match_type_raw:
+                    match_type = "Replacement" if match_type_raw in ["Perfect", "Partial"] else "No Replacement"
+                    edges_file.write(f"{input_part},{output_part},Match,{match_type}\n".encode())
+                    edge_count += 1
             edges_file.close()
+
+            if edge_count == 0:
+                print("⚠️ Warning: No valid edges found. edges.csv will only contain headers.")
 
             # Upload to S3
             vertices_s3 = upload_file_to_s3(vertices_file.name, f"{job_prefix}vertices.csv")
             edges_s3 = upload_file_to_s3(edges_file.name, f"{job_prefix}edges.csv")
 
-            # Trigger bulk load on **folder**, not individual files
+            # Trigger bulk load
             bucket_name = os.getenv("S3_BUCKET_NAME")
             s3_folder = f"s3://{bucket_name}/{job_prefix}"
             loader_results = trigger_bulk_load(s3_folder)
@@ -98,6 +101,8 @@ class UploadFileUseCase:
 
             return {
                 "status": "success",
+                "vertices_count": len(vertices_df),
+                "edges_count": edge_count,
                 "vertices_s3": vertices_s3,
                 "edges_s3": edges_s3,
                 "s3_folder": s3_folder,
