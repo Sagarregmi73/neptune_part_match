@@ -8,6 +8,7 @@ from lib.app.adapter.output.persistence.neptune.neptune_repository import Neptun
 from lib.core.aws.s3_client import upload_file_to_s3
 from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 
+
 class UploadFileUseCase:
     def __init__(self, backup_to_s3: bool = True):
         self.repo = NeptuneRepository()
@@ -18,6 +19,7 @@ class UploadFileUseCase:
         vertices_created = set()
         edges_created = 0
 
+        # Normal repo persistence (optional)
         for row in df.itertuples():
             input_part = getattr(row, "Input_Part_Number", None)
             output_part = getattr(row, "Output_Part_Number", None)
@@ -40,6 +42,7 @@ class UploadFileUseCase:
                 self.repo.create_match(Match(input_part, output_part, match_type))
                 edges_created += 1
 
+        # Bulk load prep
         if self.backup_to_s3:
             job_id = str(uuid.uuid4())
             job_prefix = f"bulk_load/{job_id}/"
@@ -47,26 +50,37 @@ class UploadFileUseCase:
             vertices_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
             edges_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
 
-            # Build vertices.csv
+            # Build vertices.csv (Neptune bulk load format)
             vertices_data = []
             for row in df.itertuples():
                 if getattr(row, "Input_Part_Number", None):
-                    vertices_data.append({"part_number": row.Input_Part_Number,
-                                          "specs": row.Input_Specs,
-                                          "notes": row.Input_Notes})
+                    vertices_data.append({
+                        "~id": row.Input_Part_Number,
+                        "~label": "Part",
+                        "part_number:String": row.Input_Part_Number,
+                        "specs:String": getattr(row, "Input_Specs", ""),
+                        "notes:String": getattr(row, "Input_Notes", "")
+                    })
                 if getattr(row, "Output_Part_Number", None) and row.Output_Part_Number != "-":
-                    vertices_data.append({"part_number": row.Output_Part_Number,
-                                          "specs": row.Output_Specs,
-                                          "notes": row.Output_Notes})
-            pd.DataFrame(vertices_data).drop_duplicates(subset="part_number")\
+                    vertices_data.append({
+                        "~id": row.Output_Part_Number,
+                        "~label": "Part",
+                        "part_number:String": row.Output_Part_Number,
+                        "specs:String": getattr(row, "Output_Specs", ""),
+                        "notes:String": getattr(row, "Output_Notes", "")
+                    })
+
+            pd.DataFrame(vertices_data).drop_duplicates(subset="~id") \
                 .to_csv(vertices_file.name, index=False)
 
-            # Build edges.csv
-            edges_file.write(b"source,target,match_type\n")
+            # Build edges.csv (Neptune bulk load format)
+            edges_file.write(b"~from,~to,~label,match_type:String\n")
             for row in df.itertuples():
-                if getattr(row, "Match_Type", None):
+                if getattr(row, "Match_Type", None) and row.Output_Part_Number and row.Output_Part_Number != "-":
                     match_type = "Replacement" if row.Match_Type in ["Perfect", "Partial"] else "No Replacement"
-                    edges_file.write(f"{row.Input_Part_Number},{row.Output_Part_Number},{match_type}\n".encode())
+                    edges_file.write(
+                        f"{row.Input_Part_Number},{row.Output_Part_Number},Match,{match_type}\n".encode()
+                    )
             edges_file.close()
 
             # Upload to S3
@@ -78,7 +92,7 @@ class UploadFileUseCase:
             s3_folder = f"s3://{bucket_name}/{job_prefix}"
             loader_results = trigger_bulk_load(s3_folder)
 
-            # Delete temp files
+            # Cleanup temp files
             os.remove(vertices_file.name)
             os.remove(edges_file.name)
 
