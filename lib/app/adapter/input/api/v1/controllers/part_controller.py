@@ -3,16 +3,11 @@ from typing import List
 from lib.app.domain.dtos.part_number_dto import PartNumberDTO
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.application.use_cases.crud_part_usecase import CrudPartUseCase
-from lib.core.utils.container import get_part_repository
-from lib.app.application.use_cases.upload_file_usecase import UploadFileUseCase
+from lib.core.utils.container import get_part_repository, get_file_usecase
 
 router = APIRouter()
 
-def get_usecase():
-    return CrudPartUseCase(get_part_repository())
-
-def get_file_usecase():
-    return UploadFileUseCase()
+def get_usecase(): return CrudPartUseCase(get_part_repository())
 
 @router.post("/", response_model=PartNumberDTO)
 def create_part(part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_usecase)):

@@ -30,7 +30,7 @@ def delete_match(source: str, target: str):
 def list_matches():
     return [MatchDTO(**vars(m)) for m in usecase.list_matches()]
 
-# Bidirectional search endpoint
+# Bidirectional search
 @router.get("/search/{part_number}", response_model=List[MatchDTO])
 def search_matches(part_number: str):
     matches = usecase.get_matches_for_part(part_number)
