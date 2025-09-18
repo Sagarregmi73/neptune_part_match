@@ -1,11 +1,10 @@
-# lib/app/application/use_cases/upload_file_usecase.py
-
-import pandas as pd
-import tempfile
 import os
+import tempfile
+import time
 from io import BytesIO
-from lib.core.aws.neptune_bulk_loader import trigger_bulk_load, poll_bulk_load_status
+import pandas as pd
 from lib.core.aws.s3_client import upload_file_to_s3
+from lib.core.aws.neptune_bulk_loader import trigger_bulk_load, poll_bulk_load_status
 
 class UploadFileUseCase:
     def __init__(self, backup_to_s3: bool = True):
@@ -13,12 +12,20 @@ class UploadFileUseCase:
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
 
     def execute(self, file_bytes: BytesIO, filename: str) -> dict:
-        # Step 1: Save XLSX temporarily
+        """
+        Process XLSX file:
+        - Convert to CSV for Neptune
+        - Upload CSVs to S3
+        - Trigger Neptune bulk loader
+        - Poll bulk loader until completion
+        """
+
+        # ---------------- Step 1: Save XLSX temporarily ----------------
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(file_bytes.read())
             tmp_path = tmp.name
 
-        # Step 2: Read Excel
+        # ---------------- Step 2: Read Excel ----------------
         df = pd.read_excel(tmp_path)
 
         vertices, edges = [], []
@@ -39,13 +46,13 @@ class UploadFileUseCase:
         vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
         edges_df = pd.DataFrame(edges)
 
-        # Step 3: Save CSVs temporarily
+        # ---------------- Step 3: Save CSVs temporarily ----------------
         vertices_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
         edges_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
         vertices_df.to_csv(vertices_csv, index=False)
         edges_df.to_csv(edges_csv, index=False)
 
-        # Step 4: Upload CSVs to S3
+        # ---------------- Step 4: Upload CSVs to S3 ----------------
         vertices_s3_key = f"neptune_bulk/{os.path.basename(vertices_csv)}"
         edges_s3_key = f"neptune_bulk/{os.path.basename(edges_csv)}"
 
@@ -53,13 +60,18 @@ class UploadFileUseCase:
             upload_file_to_s3(vertices_csv, vertices_s3_key)
             upload_file_to_s3(edges_csv, edges_s3_key)
 
-        # Step 5: Trigger Neptune Bulk Loader
+        # ---------------- Step 5: Trigger Neptune Bulk Loader ----------------
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
         bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
         bulk_load_id = bulk_response.get("loadId")
 
-        # Step 6: Poll until bulk load completes
-        bulk_status = poll_bulk_load_status(bulk_load_id)
+        # ---------------- Step 6: Poll for Bulk Load Status ----------------
+        bulk_status = None
+        failures = []
+        if bulk_load_id:
+            bulk_status_response = poll_bulk_load_status(bulk_load_id)
+            bulk_status = bulk_status_response.get("status")
+            failures = bulk_status_response.get("failures", [])
 
         return {
             "vertices_created": len(vertices_df),
@@ -67,6 +79,6 @@ class UploadFileUseCase:
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
             "bulk_load_id": bulk_load_id,
-            "bulk_status": bulk_status.get("status"),  # final status
-            "failures": bulk_status.get("failureReason")  # if any
+            "bulk_status": bulk_status,
+            "failures": failures
         }
