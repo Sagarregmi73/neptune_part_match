@@ -1,10 +1,13 @@
+# lib/core/utils/container.py
+
+import os
 from lib.app.application.use_cases.crud_part_usecase import CrudPartUseCase
 from lib.app.application.use_cases.match_part_usecase import MatchPartUseCase
 from lib.app.application.use_cases.upload_file_usecase import UploadFileUseCase
 from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
-import os 
+
 # ---------------- Repository Instances ----------------
-# For now, using NeptuneRepository
+# For now, using NeptuneRepository. Can extend for multiple DBs later.
 neptune_repository = NeptuneRepository()
 
 # ---------------- CRUD Usecase Factory ----------------
@@ -32,7 +35,7 @@ def get_match_usecase():
 def get_file_usecase():
     """
     Returns the File Upload usecase instance.
-    Controlled by BACKUP_TO_S3 env variable.
+    Controlled by BACKUP_TO_S3 environment variable.
     """
     backup_to_s3 = os.getenv("BACKUP_TO_S3", "false").lower() == "true"
-    return UploadFileUseCase(repository=get_part_repository(), backup_to_s3=backup_to_s3)
+    return UploadFileUseCase(backup_to_s3=backup_to_s3)
