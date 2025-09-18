@@ -7,7 +7,6 @@ from lib.app.adapter.output.persistence.neptune.neptune_repository import Neptun
 from lib.app.domain.services.match_logic import MatchLogic
 import boto3
 from botocore.exceptions import NoCredentialsError
-import io
 from io import BytesIO
 
 
