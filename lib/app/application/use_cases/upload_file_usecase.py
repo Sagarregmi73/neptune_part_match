@@ -1,16 +1,40 @@
+# lib/app/application/use_cases/upload_file_usecase.py
+
 import pandas as pd
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
 from lib.app.domain.services.match_logic import MatchLogic
+import boto3
+from botocore.exceptions import NoCredentialsError
+import io
 
 class UploadFileUseCase:
-    def __init__(self):
+    def __init__(self, backup_to_s3: bool = False):
         self.repo = NeptuneRepository()
         self.logic = MatchLogic()
+        self.backup_to_s3 = backup_to_s3
+
+    def _upload_to_s3(self, file_bytes, filename: str):
+        try:
+            s3_client = boto3.client("s3")
+            bucket_name = "your-bucket-name"  # Update with your bucket
+            s3_client.upload_fileobj(io.BytesIO(file_bytes), bucket_name, filename)
+            return True
+        except NoCredentialsError:
+            print("S3 credentials not found!")
+            return False
+        except Exception as e:
+            print(f"S3 upload failed: {e}")
+            return False
 
     def execute(self, file_bytes, filename: str):
-        df = pd.read_excel(file_bytes, header=[0,1])  # first 2 rows: header + template
+        # Backup to S3 if enabled
+        if self.backup_to_s3:
+            self._upload_to_s3(file_bytes, filename)
+
+        # Read Excel
+        df = pd.read_excel(file_bytes, header=[0, 1])  # first 2 rows: header + template
         vertices_created = set()
         edges_created = 0
 
