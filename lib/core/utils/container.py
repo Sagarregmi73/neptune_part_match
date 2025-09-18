@@ -20,9 +20,10 @@ def get_part_repository():
 
 def get_part_usecase():
     """
-    Returns an instance of CrudPartUseCase.
+    Returns an instance of CrudPartUseCase with the required repository.
     """
-    return CrudPartUseCase()
+    repository = get_part_repository()  # get repository instance
+    return CrudPartUseCase(repository)  # pass repository to use case
 
 # ---------------- Match Usecase Factory ----------------
 def get_match_usecase():
