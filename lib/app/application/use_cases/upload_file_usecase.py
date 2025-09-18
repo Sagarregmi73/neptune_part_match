@@ -5,6 +5,7 @@ from io import BytesIO
 from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 from lib.core.aws.s3_client import upload_file_to_s3
 
+
 class UploadFileUseCase:
     def __init__(self, backup_to_s3: bool = True):
         self.backup_to_s3 = backup_to_s3
@@ -32,7 +33,12 @@ class UploadFileUseCase:
             vertices.append({"~id": output_part, "~label": "PartNumber", **output_props})
 
             match_type = row.get("Match Type", "No Match")
-            edges.append({"~from": input_part, "~to": output_part, "~label": "MATCHED", "match_type": match_type})
+            edges.append({
+                "~from": input_part,
+                "~to": output_part,
+                "~label": "MATCHED",
+                "match_type": match_type
+            })
 
         vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
         edges_df = pd.DataFrame(edges)
@@ -53,13 +59,14 @@ class UploadFileUseCase:
 
         # Step 5: Trigger Neptune Bulk Loader
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
-        # use same UploadFileUseCase as before
         bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
 
         return {
+            "message": "File processed and bulk load triggered successfully.",
             "vertices_created": len(vertices_df),
             "edges_created": len(edges_df),
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
-            "bulk_load_id": bulk_response.get("loadId")  # now should return actual ID
-                }
+            # ✅ FIXED: Neptune returns loadId inside payload
+            "bulk_load_id": bulk_response.get("payload", {}).get("loadId")
+        }

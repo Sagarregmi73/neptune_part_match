@@ -1,7 +1,7 @@
-# lib/core/aws/neptune_bulk_loader.py
 import os
 import requests
 import json
+
 
 def trigger_bulk_load(s3_input_uri: str, mode: str = "NEW") -> dict:
     """
