@@ -2,7 +2,7 @@ from io import BytesIO
 import pandas as pd
 import tempfile
 import os
-from lib.core.aws.neptune_bulk_loader import trigger_bulk_load, poll_bulk_load_status
+from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 from lib.core.aws.s3_client import upload_file_to_s3
 
 class UploadFileUseCase:
@@ -11,12 +11,12 @@ class UploadFileUseCase:
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
 
     def execute(self, file_bytes: BytesIO, filename: str) -> dict:
-        # Save XLSX temporarily
+        # Step 1: Save XLSX temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(file_bytes.read())
             tmp_path = tmp.name
 
-        # Read Excel
+        # Step 2: Read Excel
         df = pd.read_excel(tmp_path)
 
         vertices, edges = [], []
@@ -37,13 +37,13 @@ class UploadFileUseCase:
         vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
         edges_df = pd.DataFrame(edges)
 
-        # Save CSVs temporarily
+        # Step 3: Save CSVs temporarily
         vertices_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
         edges_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
         vertices_df.to_csv(vertices_csv, index=False)
         edges_df.to_csv(edges_csv, index=False)
 
-        # Upload CSVs to S3
+        # Step 4: Upload CSVs to S3
         vertices_s3_key = f"neptune_bulk/{os.path.basename(vertices_csv)}"
         edges_s3_key = f"neptune_bulk/{os.path.basename(edges_csv)}"
 
@@ -51,30 +51,15 @@ class UploadFileUseCase:
             upload_file_to_s3(vertices_csv, vertices_s3_key)
             upload_file_to_s3(edges_csv, edges_s3_key)
 
-        # Trigger Neptune Bulk Loader
+        # Step 5: Trigger Neptune Bulk Loader and return immediately
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
+        bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
 
-        try:
-            bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
-            load_id = bulk_response.get("loadId")
-        except Exception as e:
-            raise Exception(f"Failed to trigger bulk load: {str(e)}")
-
-        if load_id:
-            # Poll for status
-            poll_result = poll_bulk_load_status(load_id)
-            bulk_status = poll_result.get("status")
-            failures = poll_result.get("failures", [])
-        else:
-            bulk_status = None
-            failures = []
-
+        # Return real loadId immediately
         return {
             "vertices_created": len(vertices_df),
             "edges_created": len(edges_df),
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
-            "bulk_load_id": load_id,
-            "bulk_status": bulk_status,
-            "failures": failures
+            "bulk_load_id": bulk_response.get("loadId")
         }

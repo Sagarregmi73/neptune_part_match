@@ -1,3 +1,5 @@
+# lib/app/adapter/input/api/v1/controllers/part_controller.py
+
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from typing import List
 from lib.app.domain.dtos.part_number_dto import PartNumberDTO
@@ -50,7 +52,7 @@ async def upload_parts(
     file_content = await file.read()
 
     try:
-        # Execute bulk upload workflow
+        # Execute bulk upload workflow (old behavior: returns loadId immediately)
         result = file_usecase.execute(BytesIO(file_content), file.filename)
 
         return {
@@ -59,9 +61,7 @@ async def upload_parts(
             "edges_created": result.get("edges_created", 0),
             "s3_vertices": result.get("s3_vertices"),
             "s3_edges": result.get("s3_edges"),
-            "bulk_load_id": result.get("bulk_load_id"),
-            "bulk_status": result.get("bulk_status"),
-            "failures": result.get("failures")
+            "bulk_load_id": result.get("bulk_load_id")  # real loadId immediately
         }
 
     except Exception as e:
