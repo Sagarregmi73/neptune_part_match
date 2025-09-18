@@ -1,7 +1,7 @@
-from io import BytesIO
 import pandas as pd
 import tempfile
 import os
+from io import BytesIO
 from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 from lib.core.aws.s3_client import upload_file_to_s3
 
@@ -51,15 +51,23 @@ class UploadFileUseCase:
             upload_file_to_s3(vertices_csv, vertices_s3_key)
             upload_file_to_s3(edges_csv, edges_s3_key)
 
-        # Step 5: Trigger Neptune Bulk Loader and return immediately
+        # Step 5: Trigger Neptune Bulk Loader
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
         bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
 
-        # Return real loadId immediately
+        # ✅ Look for loadId inside payload to avoid null issue
+        bulk_load_id = None
+        if isinstance(bulk_response, dict):
+            bulk_load_id = (
+                bulk_response.get("payload", {}).get("loadId")
+                or bulk_response.get("loadId")
+            )
+
         return {
+            "message": "File processed and bulk load triggered successfully.",
             "vertices_created": len(vertices_df),
             "edges_created": len(edges_df),
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
-            "bulk_load_id": bulk_response.get("loadId")
+            "bulk_load_id": bulk_load_id
         }
