@@ -4,18 +4,12 @@ import json
 import time
 
 def trigger_bulk_load(s3_input_uri: str, mode: str = "NEW") -> dict:
-    """
-    Trigger Neptune Bulk Loader via HTTP API
-    :param s3_input_uri: S3 folder URI (s3://bucket/key/)
-    :param mode: NEW / RESUME / AUTO
-    :return: dict containing 'loadId'
-    """
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
     region = os.getenv("AWS_REGION")
 
     if not all([neptune_endpoint, iam_role_arn, region]):
-        raise Exception("NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set in env")
+        raise Exception("NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set")
 
     loader_url = f"https://{neptune_endpoint}:8182/loader"
 
@@ -31,28 +25,27 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "NEW") -> dict:
     }
 
     headers = {"Content-Type": "application/json"}
-
     response = requests.post(loader_url, headers=headers, data=json.dumps(payload), verify=False)
+
+    print("DEBUG: Neptune loader response:", response.status_code, response.text)
+
     if response.status_code not in [200, 201]:
         raise Exception(f"Bulk load failed: {response.text}")
 
-    return response.json()
+    data = response.json()
+    if "loadId" not in data:
+        raise Exception(f"No loadId returned from Neptune: {data}")
+
+    return data
 
 
 def poll_bulk_load_status(load_id: str, interval: int = 5, timeout: int = 300) -> dict:
-    """
-    Poll Neptune Bulk Loader status until completion.
-    :param load_id: Bulk Load ID returned by trigger_bulk_load
-    :param interval: Polling interval in seconds
-    :param timeout: Maximum wait time in seconds
-    :return: dict with 'status' and 'failures'
-    """
     if not load_id:
         raise ValueError("load_id must be provided to poll status")
 
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     if not neptune_endpoint:
-        raise Exception("NEPTUNE_ENDPOINT must be set in env")
+        raise Exception("NEPTUNE_ENDPOINT must be set")
 
     status_url = f"https://{neptune_endpoint}:8182/loader/{load_id}"
     headers = {"Content-Type": "application/json"}

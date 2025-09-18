@@ -1,5 +1,3 @@
-# lib/app/adapter/input/api/v1/controllers/part_controller.py
-
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from typing import List
 from lib.app.domain.dtos.part_number_dto import PartNumberDTO
@@ -7,6 +5,7 @@ from lib.app.domain.entities.part_number import PartNumber
 from lib.app.application.use_cases.crud_part_usecase import CrudPartUseCase
 from lib.app.application.use_cases.upload_file_usecase import UploadFileUseCase
 from lib.core.utils.container import get_part_usecase, get_file_usecase
+from io import BytesIO
 
 router = APIRouter()
 
@@ -48,7 +47,6 @@ async def upload_parts(
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only XLSX files are supported")
 
-    from io import BytesIO
     file_content = await file.read()
 
     try:

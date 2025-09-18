@@ -53,11 +53,15 @@ class UploadFileUseCase:
 
         # Trigger Neptune Bulk Loader
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
-        bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
 
-        # Extract loadId and poll status
-        load_id = bulk_response.get("loadId")
+        try:
+            bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
+            load_id = bulk_response.get("loadId")
+        except Exception as e:
+            raise Exception(f"Failed to trigger bulk load: {str(e)}")
+
         if load_id:
+            # Poll for status
             poll_result = poll_bulk_load_status(load_id)
             bulk_status = poll_result.get("status")
             failures = poll_result.get("failures", [])
