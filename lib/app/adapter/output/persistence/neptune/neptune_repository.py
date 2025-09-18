@@ -21,8 +21,8 @@ class NeptuneRepository(RepositoryInterface):
     def get_part(self, part_number: str):
         try:
             v = self.g.V().has("PartNumber", "id", part_number).next()
-            specs = eval(v.properties["specs"][0].value)
-            notes = eval(v.properties["notes"][0].value)
+            specs = eval(v.properties["specs"][0].value) if "specs" in v.properties else {}
+            notes = eval(v.properties["notes"][0].value) if "notes" in v.properties else {}
             return PartNumber(v.id, specs, notes)
         except StopIteration:
             return None
@@ -41,8 +41,8 @@ class NeptuneRepository(RepositoryInterface):
         vertices = self.g.V().hasLabel("PartNumber").toList()
         parts = []
         for v in vertices:
-            specs = eval(v.properties["specs"][0].value)
-            notes = eval(v.properties["notes"][0].value)
+            specs = eval(v.properties["specs"][0].value) if "specs" in v.properties else {}
+            notes = eval(v.properties["notes"][0].value) if "notes" in v.properties else {}
             parts.append(PartNumber(v.id, specs, notes))
         return parts
 
@@ -57,13 +57,11 @@ class NeptuneRepository(RepositoryInterface):
         return match
 
     def get_match(self, source: str, target: str):
-        e_list = self.g.E().hasLabel("MATCHED")\
+        e = self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", source))\
             .where(__.inV().has("id", target)).toList()
-        if e_list:
-            e = e_list[0]
-            match_type = e.properties["match_type"][0].value
-            return Match(e.outV.id, e.inV.id, match_type)
+        if e:
+            return Match(source, target, e[0].properties["match_type"][0].value)
         return None
 
     def update_match(self, match: Match) -> Match:
@@ -81,10 +79,7 @@ class NeptuneRepository(RepositoryInterface):
 
     def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
-        matches = []
-        for e in edges:
-            match_type = e.properties["match_type"][0].value
-            matches.append(Match(e.outV.id, e.inV.id, match_type))
+        matches = [Match(e.outV.id, e.inV.id, e.properties["match_type"][0].value) for e in edges]
         return matches
 
     # -------------------- BIDIRECTIONAL SEARCH --------------------
@@ -95,7 +90,6 @@ class NeptuneRepository(RepositoryInterface):
                         .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
         matches = []
         for e in edges_out + edges_in:
-            edge = e["e"]
-            match_type = edge.properties["match_type"][0].value
-            matches.append(Match(edge.outV.id, edge.inV.id, match_type))
+            match_type = e["e"].properties["match_type"][0].value
+            matches.append(Match(e["e"].outV.id, e["e"].inV.id, match_type))
         return matches
