@@ -39,22 +39,19 @@ def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
 
 # ------------------- File Upload & Bulk Load -------------------
 
-@router.post("/upload")
+router.post("/upload")
 async def upload_parts(
     file: UploadFile = File(...),
-    backup_to_s3: bool = Query(True, description="Whether to backup CSV to S3"),
-    file_usecase: UploadFileUseCase = Depends(lambda: get_file_usecase(backup_to_s3=True))
+    file_usecase: UploadFileUseCase = Depends(get_file_usecase)
 ):
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only XLSX files are supported")
 
-    # Read file content as bytes
+    from io import BytesIO
     file_content = await file.read()
 
     try:
-        # Execute bulk upload workflow (expects raw bytes, not BytesIO)
-        result = file_usecase.execute(file_content, file.filename)
-
+        result = file_usecase.execute(BytesIO(file_content), file.filename)
         return {
             "message": "File processed and bulk load triggered successfully.",
             "vertices_created": result.get("vertices_created", 0),
@@ -63,6 +60,5 @@ async def upload_parts(
             "s3_edges": result.get("s3_edges"),
             "bulk_load_id": result.get("bulk_load_id")
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")

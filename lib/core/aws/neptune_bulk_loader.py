@@ -4,37 +4,30 @@ import ssl
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
+def trigger_bulk_load(s3_input_uri: str, mode: str = "NEW") -> dict:
     """
     Trigger a Neptune bulk load job from S3 folder.
-    :param s3_input_uri: S3 folder URI (NOT individual file)
-    :param mode: "RESUME" or "NEW"
-    :return: dict containing full response and loadId
     """
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
-    s3_bucket_region = os.getenv("AWS_REGION")
+    aws_region = os.getenv("AWS_REGION")
 
-    if not all([neptune_endpoint, iam_role_arn, s3_bucket_region]):
-        raise Exception("Environment variables NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set")
+    if not all([neptune_endpoint, iam_role_arn, aws_region]):
+        raise Exception("NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set in env")
 
-    # DNS & HTTPS check
+    # Test connectivity
     try:
         socket.gethostbyname(neptune_endpoint)
-    except socket.gaierror:
-        raise Exception(f"Cannot resolve Neptune endpoint '{neptune_endpoint}'.")
-
-    try:
         context = ssl.create_default_context()
         with socket.create_connection((neptune_endpoint, 8182), timeout=10) as sock:
             with context.wrap_socket(sock, server_hostname=neptune_endpoint):
                 pass
     except Exception as e:
-        raise Exception(f"Cannot reach Neptune endpoint '{neptune_endpoint}:8182'. Original error: {e}")
+        raise Exception(f"Cannot reach Neptune endpoint '{neptune_endpoint}:8182'. {e}")
 
     client = boto3.client(
         "neptunedata",
-        region_name=s3_bucket_region,
+        region_name=aws_region,
         endpoint_url=f"https://{neptune_endpoint}:8182"
     )
 
@@ -43,16 +36,12 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
             source=s3_input_uri,
             format="csv",
             iamRoleArn=iam_role_arn,
-            s3BucketRegion=s3_bucket_region,
+            s3BucketRegion=aws_region,
             mode=mode,
             failOnError=True,
             parallelism="MEDIUM",
             updateSingleCardinalityProperties=True
         )
-
-        # Extract loadId from response (Neptune may nest it in 'Payload')
-        bulk_load_id = response.get("loadId") or response.get("Payload", {}).get("loadId")
-        return {"response": response, "loadId": bulk_load_id}
-
+        return {"loadId": response.get("loadId"), "status": response.get("status")}
     except (BotoCoreError, ClientError) as e:
         raise Exception(f"Failed to start Neptune bulk load. Error: {e}")
