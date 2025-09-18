@@ -1,5 +1,3 @@
-# lib/app/application/use_cases/bulk_loader_trigger.py
-
 import os
 import socket
 import ssl
@@ -7,12 +5,18 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
+    """
+    Trigger a Neptune bulk load job from S3 folder.
+    :param s3_input_uri: S3 folder URI (NOT individual file)
+    :param mode: "RESUME" or "NEW"
+    :return: dict containing full response and loadId
+    """
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
     s3_bucket_region = os.getenv("AWS_REGION")
 
     if not all([neptune_endpoint, iam_role_arn, s3_bucket_region]):
-        raise Exception("NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set")
+        raise Exception("Environment variables NEPTUNE_ENDPOINT, NEPTUNE_IAM_ROLE_ARN, AWS_REGION must be set")
 
     # DNS & HTTPS check
     try:
@@ -45,6 +49,10 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "RESUME") -> dict:
             parallelism="MEDIUM",
             updateSingleCardinalityProperties=True
         )
-        return response
+
+        # Extract loadId from response (Neptune may nest it in 'Payload')
+        bulk_load_id = response.get("loadId") or response.get("Payload", {}).get("loadId")
+        return {"response": response, "loadId": bulk_load_id}
+
     except (BotoCoreError, ClientError) as e:
         raise Exception(f"Failed to start Neptune bulk load. Error: {e}")

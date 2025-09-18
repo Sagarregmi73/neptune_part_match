@@ -9,21 +9,14 @@ from lib.core.aws.s3_client import get_s3_client
 
 class UploadFileUseCase:
     def __init__(self, backup_to_s3: bool = True):
-        """
-        Initialize the use case.
-        :param backup_to_s3: If True, uploads CSVs to S3 before triggering Neptune bulk loader.
-        """
         self.backup_to_s3 = backup_to_s3
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
         self.s3_client = get_s3_client()
 
-    def execute(self, file_bytes: BytesIO, filename: str):
-        """
-        Process XLSX file, convert to CSVs for Neptune bulk load, upload to S3, and trigger bulk loader.
-        """
+    def execute(self, file_bytes, filename: str):
         # Step 1: Save XLSX temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            tmp.write(file_bytes.read())
+            tmp.write(file_bytes)
             tmp_path = tmp.name
 
         # Step 2: Read Excel
@@ -75,13 +68,10 @@ class UploadFileUseCase:
             "edges_created": len(edges_df),
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
-            "bulk_load_id": bulk_response.get("loadId", None)
+            "bulk_load_id": bulk_response.get("loadId")
         }
 
     def _upload_to_s3(self, local_file_path, s3_key):
-        """
-        Upload a file to S3.
-        """
         try:
             self.s3_client.upload_file(local_file_path, self.s3_bucket, s3_key)
             print(f"Uploaded {s3_key} to bucket {self.s3_bucket}")
