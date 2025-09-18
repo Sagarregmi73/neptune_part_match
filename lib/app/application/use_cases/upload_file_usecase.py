@@ -8,6 +8,7 @@ from lib.app.domain.services.match_logic import MatchLogic
 import boto3
 from botocore.exceptions import NoCredentialsError
 from io import BytesIO
+import os
 
 
 class UploadFileUseCase:
@@ -17,9 +18,19 @@ class UploadFileUseCase:
         self.backup_to_s3 = backup_to_s3
 
     def _upload_to_s3(self, file_bytes, filename: str):
+        """
+        Upload file to S3 using credentials from environment variables.
+        """
         try:
-            s3_client = boto3.client("s3")
-            bucket_name = "your-bucket-name"  # Update with your bucket
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                region_name=os.getenv("AWS_REGION")
+            )
+            bucket_name = os.getenv("S3_BUCKET_NAME")
+            if not bucket_name:
+                raise ValueError("S3_BUCKET_NAME not set in environment")
             s3_client.upload_fileobj(BytesIO(file_bytes), bucket_name, filename)
             return True
         except NoCredentialsError:
@@ -30,6 +41,9 @@ class UploadFileUseCase:
             return False
 
     def execute(self, file_bytes, filename: str):
+        """
+        Upload Excel file, create parts and matches in Neptune.
+        """
         # Backup to S3 if enabled
         if self.backup_to_s3:
             if isinstance(file_bytes, BytesIO):
@@ -47,17 +61,17 @@ class UploadFileUseCase:
         vertices_created = set()
         edges_created = 0
 
-        # Skip header/template rows if needed (e.g., first 2 rows)
-        for row in df.iloc[2:].itertuples(index=False):
+        # Iterate rows using iterrows (safe for columns with spaces)
+        for i, row in df.iloc[2:].iterrows():  # skip first 2 template rows
             # Extract part numbers
-            input_part = getattr(row, "Input Part Number", None)
-            output_part = getattr(row, "Output Part Number", None)
+            input_part = row.get("Input Part Number", None)
+            output_part = row.get("Output Part Number", None)
 
             # Extract specs and notes dynamically
-            input_specs = {col: getattr(row, col) for col in df.columns if col.startswith("Input Spec")}
-            input_notes = {col: getattr(row, col) for col in df.columns if col.startswith("Input Note")}
-            output_specs = {col: getattr(row, col) for col in df.columns if col.startswith("Output Spec")}
-            output_notes = {col: getattr(row, col) for col in df.columns if col.startswith("Output Note")}
+            input_specs = {col: row[col] for col in df.columns if col.startswith("Input Spec")}
+            input_notes = {col: row[col] for col in df.columns if col.startswith("Input Note")}
+            output_specs = {col: row[col] for col in df.columns if col.startswith("Output Spec")}
+            output_notes = {col: row[col] for col in df.columns if col.startswith("Output Note")}
 
             # Create vertices for parts
             if input_part and input_part not in vertices_created:
