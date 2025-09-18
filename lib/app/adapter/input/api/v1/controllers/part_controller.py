@@ -39,7 +39,7 @@ def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
 
 # ------------------- File Upload & Bulk Load -------------------
 
-router.post("/upload")
+@router.post("/upload")
 async def upload_parts(
     file: UploadFile = File(...),
     file_usecase: UploadFileUseCase = Depends(get_file_usecase)
