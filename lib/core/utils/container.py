@@ -2,7 +2,7 @@ from lib.app.application.use_cases.crud_part_usecase import CrudPartUseCase
 from lib.app.application.use_cases.match_part_usecase import MatchPartUseCase
 from lib.app.application.use_cases.upload_file_usecase import UploadFileUseCase
 from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
-
+import os 
 # ---------------- Repository Instances ----------------
 # For now, using NeptuneRepository
 neptune_repository = NeptuneRepository()
@@ -29,9 +29,10 @@ def get_match_usecase():
     return MatchPartUseCase(get_part_repository())
 
 # ---------------- File Upload Usecase Factory ----------------
-def get_file_usecase(backup_to_s3: bool = False):
+def get_file_usecase():
     """
     Returns the File Upload usecase instance.
-    Accepts optional backup_to_s3 flag.
+    Controlled by BACKUP_TO_S3 env variable.
     """
+    backup_to_s3 = os.getenv("BACKUP_TO_S3", "false").lower() == "true"
     return UploadFileUseCase(repository=get_part_repository(), backup_to_s3=backup_to_s3)
