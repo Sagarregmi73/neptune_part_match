@@ -15,7 +15,7 @@ def get_s3_client():
 
 def upload_file_to_s3(local_file_path: str, s3_key: str) -> str:
     """
-    Uploads a local file to S3.
+    Upload a local file to S3.
     Returns the S3 URI: s3://bucket/key
     """
     bucket_name = os.getenv("S3_BUCKET_NAME")
@@ -24,5 +24,4 @@ def upload_file_to_s3(local_file_path: str, s3_key: str) -> str:
 
     s3 = get_s3_client()
     s3.upload_file(local_file_path, bucket_name, s3_key)
-
     return f"s3://{bucket_name}/{s3_key}"

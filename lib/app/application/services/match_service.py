@@ -2,6 +2,7 @@ from lib.app.application.services.repository_interface import RepositoryInterfac
 from lib.app.domain.entities.match import Match
 from lib.app.domain.services.match_logic import MatchLogic
 from lib.core.logging import logger
+from typing import List
 
 class MatchService:
     """
@@ -13,22 +14,19 @@ class MatchService:
         self.logic = MatchLogic()
 
     # ------------------- CREATE -------------------
-    def create_match(self, source: str, target: str, source_specs: str, source_notes: str, 
-                     target_specs: str, target_notes: str) -> Match:
-        """
-        Create a match and automatically determine match_type.
-        """
+    def create_match(self, source: str, target: str, source_specs: dict, source_notes: dict,
+                     target_specs: dict, target_notes: dict) -> Match:
         match_type = self.logic.determine_match(source_specs, source_notes, target_specs, target_notes)
         match = Match(source=source, target=target, match_type=match_type)
         self.repository.create_match(match)
         logger.info(f"Match created: {match}")
         return match
 
-    # ------------------- READ ---------------------
+    # ------------------- READ -------------------
     def get_match(self, source: str, target: str) -> Match:
         return self.repository.get_match(source, target)
 
-    def list_matches(self):
+    def list_matches(self) -> List[Match]:
         return self.repository.list_matches()
 
     # ------------------- UPDATE -------------------
@@ -44,15 +42,8 @@ class MatchService:
         return result
 
     # ------------------- BIDIRECTIONAL SEARCH -------------------
-    def search_matches_for_part(self, part_number: str):
+    def search_matches_for_part(self, part_number: str) -> List[Match]:
         """
         Returns all matches where part_number is source or target.
         """
-        edges_out = self.repository.g.V().has("PartNumber", "id", part_number)\
-                       .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
-        edges_in = self.repository.g.V().has("PartNumber", "id", part_number)\
-                       .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
-        matches = []
-        for e in edges_out + edges_in:
-            matches.append(Match(e["e"].outV["id"], e["e"].inV["id"], e["e"]["match_type"]))
-        return matches
+        return self.repository.get_matches_for_part(part_number)

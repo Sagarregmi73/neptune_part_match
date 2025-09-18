@@ -1,21 +1,17 @@
-# main.py
 from fastapi import FastAPI
 from lib.app.adapter.input.api.v1.routers import api_router
 from lib.core.logging import logger
 
 app = FastAPI(
     title="Part Matching API",
-    description="API for managing parts and their matches in Neptune DB",
+    description="API for managing parts and matches with Neptune DB",
     version="1.0.0",
-    docs_url="/docs",     # Swagger UI
-    redoc_url="/redoc"    # ReDoc UI
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
-# Include all API routes
 app.include_router(api_router, prefix="/api")
 
-# Optional root endpoint
 @app.get("/")
 def root():
     return {"message": "Part Matching API is running!"}
-

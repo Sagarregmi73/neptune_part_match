@@ -1,5 +1,8 @@
 class PartNumber:
-    def __init__(self, part_number: str, specs: str, notes: str = ""):
+    """
+    Represents a PartNumber with dynamic specs and notes as dictionaries
+    """
+    def __init__(self, part_number: str, specs: dict, notes: dict = None):
         self.part_number = part_number
-        self.specs = specs
-        self.notes = notes
+        self.specs = specs or {}
+        self.notes = notes or {}

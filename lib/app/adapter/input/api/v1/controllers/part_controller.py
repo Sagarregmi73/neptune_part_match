@@ -8,7 +8,7 @@ from lib.core.utils.container import get_part_repository, get_file_usecase
 
 router = APIRouter()
 
-def get_usecase(): 
+def get_usecase():
     return CrudPartUseCase(get_part_repository())
 
 @router.post("/", response_model=PartNumberDTO)
