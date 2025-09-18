@@ -20,9 +20,9 @@ def get_part_repository():
 
 def get_part_usecase():
     """
-    Returns the Part CRUD usecase instance
+    Returns an instance of CrudPartUseCase.
     """
-    return CrudPartUseCase(get_part_repository())
+    return CrudPartUseCase()
 
 # ---------------- Match Usecase Factory ----------------
 def get_match_usecase():
@@ -32,6 +32,8 @@ def get_match_usecase():
     return MatchPartUseCase(get_part_repository())
 
 # ---------------- File Upload Usecase Factory ----------------
-def get_file_usecase() -> UploadFileUseCase:
-    backup_to_s3 = os.getenv("BACKUP_TO_S3", "true").lower() == "true"
+def get_file_usecase(backup_to_s3: bool = True):
+    """
+    Returns an instance of UploadFileUseCase.
+    """
     return UploadFileUseCase(backup_to_s3=backup_to_s3)

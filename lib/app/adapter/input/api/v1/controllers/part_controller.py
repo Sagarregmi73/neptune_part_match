@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from typing import List
+from io import BytesIO
+
 from lib.app.domain.dtos.part_number_dto import PartNumberDTO
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.application.use_cases.crud_part_usecase import CrudPartUseCase
@@ -38,16 +40,19 @@ def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
 # ------------------- File Upload & Bulk Load -------------------
 
 @router.post("/upload")
-async def upload_parts(file: UploadFile = File(...), file_usecase: UploadFileUseCase = Depends(get_file_usecase)):
+async def upload_parts(
+    file: UploadFile = File(...),
+    file_usecase: UploadFileUseCase = Depends(get_file_usecase)
+):
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only XLSX files are supported")
 
-    from io import BytesIO
     file_content = await file.read()
 
     try:
         # Execute bulk upload workflow
         result = file_usecase.execute(BytesIO(file_content), file.filename)
+
         return {
             "message": "File processed and bulk load triggered successfully.",
             "vertices_created": result.get("vertices_created", 0),
