@@ -53,6 +53,7 @@ class UploadFileUseCase:
 
         # Step 5: Trigger Neptune Bulk Loader
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
+        # use same UploadFileUseCase as before
         bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
 
         return {
@@ -60,5 +61,5 @@ class UploadFileUseCase:
             "edges_created": len(edges_df),
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
-            "bulk_load_id": bulk_response.get("loadId")
-        }
+            "bulk_load_id": bulk_response.get("loadId")  # now should return actual ID
+                }
