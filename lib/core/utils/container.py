@@ -32,10 +32,6 @@ def get_match_usecase():
     return MatchPartUseCase(get_part_repository())
 
 # ---------------- File Upload Usecase Factory ----------------
-def get_file_usecase():
-    """
-    Returns the File Upload usecase instance.
-    Controlled by BACKUP_TO_S3 environment variable.
-    """
-    backup_to_s3 = os.getenv("BACKUP_TO_S3", "false").lower() == "true"
+def get_file_usecase() -> UploadFileUseCase:
+    backup_to_s3 = os.getenv("BACKUP_TO_S3", "true").lower() == "true"
     return UploadFileUseCase(backup_to_s3=backup_to_s3)

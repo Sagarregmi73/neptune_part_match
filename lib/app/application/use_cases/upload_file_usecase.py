@@ -1,91 +1,61 @@
-# lib/app/application/use_cases/upload_file_usecase.py
-
 import pandas as pd
-from lib.app.domain.entities.part_number import PartNumber
-from lib.app.domain.entities.match import Match
-from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
-from lib.app.domain.services.match_logic import MatchLogic
-import boto3
-from botocore.exceptions import NoCredentialsError
-from io import BytesIO
+import tempfile
 import os
-
+from io import BytesIO
+from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
+from lib.core.aws.s3_client import upload_file_to_s3
 
 class UploadFileUseCase:
-    def __init__(self, backup_to_s3: bool = False):
-        self.repo = NeptuneRepository()
-        self.logic = MatchLogic()
-        self.backup_to_s3 = backup_to_s3
+    def execute(self, file_bytes: BytesIO, filename: str):
+        # 1️⃣ Save XLSX temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(file_bytes.read())
+            tmp_path = tmp.name
 
-    def _upload_to_s3(self, file_bytes, filename: str):
-        """
-        Upload file to S3 using credentials from environment variables.
-        """
-        try:
-            s3_client = boto3.client(
-                "s3",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                region_name=os.getenv("AWS_REGION")
-            )
-            bucket_name = os.getenv("S3_BUCKET_NAME")
-            if not bucket_name:
-                raise ValueError("S3_BUCKET_NAME not set in environment")
-            s3_client.upload_fileobj(BytesIO(file_bytes), bucket_name, filename)
-            return True
-        except NoCredentialsError:
-            print("S3 credentials not found!")
-            return False
-        except Exception as e:
-            print(f"S3 upload failed: {e}")
-            return False
+        # 2️⃣ Convert Excel to CSV for Neptune bulk load
+        df = pd.read_excel(tmp_path)
+        vertices, edges = [], []
 
-    def execute(self, file_bytes, filename: str):
-        """
-        Upload Excel file, create parts and matches in Neptune.
-        """
-        # Backup to S3 if enabled
-        if self.backup_to_s3:
-            if isinstance(file_bytes, BytesIO):
-                raw_bytes = file_bytes.getvalue()
-            else:
-                raw_bytes = file_bytes
-            self._upload_to_s3(raw_bytes, filename)
+        for _, row in df.iterrows():
+            input_part = row["Input Part Number"]
+            output_part = row["Output Part Number"]
 
-        # Read Excel with multi-level headers
-        df = pd.read_excel(file_bytes, header=[0, 1])
+            # Input vertex
+            input_props = {k: row[k] for k in df.columns if k.startswith("Input Spec") or k.startswith("Input Note")}
+            vertices.append({"~id": input_part, "~label": "PartNumber", **input_props})
 
-        # Flatten MultiIndex columns: ('Input Spec', 'Length') -> 'Input Spec_Length'
-        df.columns = ['_'.join([str(c) for c in col if c]) for col in df.columns]
+            # Output vertex
+            output_props = {k: row[k] for k in df.columns if k.startswith("Output Spec") or k.startswith("Output Note")}
+            vertices.append({"~id": output_part, "~label": "PartNumber", **output_props})
 
-        vertices_created = set()
-        edges_created = 0
+            # Edge
+            match_type = row.get("Match Type", "No Match")
+            edges.append({"~from": input_part, "~to": output_part, "~label": "MATCHED", "match_type": match_type})
 
-        # Iterate rows using iterrows (safe for columns with spaces)
-        for i, row in df.iloc[2:].iterrows():  # skip first 2 template rows
-            # Extract part numbers
-            input_part = row.get("Input Part Number", None)
-            output_part = row.get("Output Part Number", None)
+        # Remove duplicate vertices
+        vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
+        edges_df = pd.DataFrame(edges)
 
-            # Extract specs and notes dynamically
-            input_specs = {col: row[col] for col in df.columns if col.startswith("Input Spec")}
-            input_notes = {col: row[col] for col in df.columns if col.startswith("Input Note")}
-            output_specs = {col: row[col] for col in df.columns if col.startswith("Output Spec")}
-            output_notes = {col: row[col] for col in df.columns if col.startswith("Output Note")}
+        # 3️⃣ Save CSV temporarily
+        vertices_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
+        edges_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
+        vertices_df.to_csv(vertices_csv, index=False)
+        edges_df.to_csv(edges_csv, index=False)
 
-            # Create vertices for parts
-            if input_part and input_part not in vertices_created:
-                self.repo.create_part(PartNumber(input_part, input_specs, input_notes))
-                vertices_created.add(input_part)
+        # 4️⃣ Upload CSVs to S3
+        vertices_s3_key = f"neptune_bulk/{os.path.basename(vertices_csv)}"
+        edges_s3_key = f"neptune_bulk/{os.path.basename(edges_csv)}"
+        upload_file_to_s3(vertices_csv, vertices_s3_key)
+        upload_file_to_s3(edges_csv, edges_s3_key)
 
-            if output_part and output_part not in vertices_created:
-                self.repo.create_part(PartNumber(output_part, output_specs, output_notes))
-                vertices_created.add(output_part)
+        # 5️⃣ Trigger Neptune Bulk Loader
+        s3_folder_uri = f"s3://{os.getenv('S3_BUCKET_NAME')}/neptune_bulk/"
+        bulk_response = trigger_bulk_load(s3_folder_uri)
 
-            # Determine match type dynamically and create edge
-            if input_part and output_part:
-                match_type = self.logic.determine_match(input_specs, input_notes, output_specs, output_notes)
-                self.repo.create_match(Match(input_part, output_part, match_type))
-                edges_created += 1
-
-        return {"vertices_created": len(vertices_created), "edges_created": edges_created}
+        return {
+            "vertices_created": len(vertices_df),
+            "edges_created": len(edges_df),
+            "s3_vertices": vertices_s3_key,
+            "s3_edges": edges_s3_key,
+            "bulk_load_id": bulk_response.get("loadId")
+        }
