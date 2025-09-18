@@ -1,4 +1,7 @@
+# lib/core/aws/neptune_bulk_loader.py
+
 import os
+import time
 import requests
 import json
 
@@ -7,7 +10,7 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "NEW") -> dict:
     Trigger Neptune Bulk Loader via HTTP API
     :param s3_input_uri: S3 folder URI (s3://bucket/key/)
     :param mode: NEW / RESUME / AUTO
-    :return: dict containing Neptune response
+    :return: dict containing 'loadId'
     """
     neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
     iam_role_arn = os.getenv("NEPTUNE_IAM_ROLE_ARN")
@@ -30,13 +33,31 @@ def trigger_bulk_load(s3_input_uri: str, mode: str = "NEW") -> dict:
     }
 
     headers = {"Content-Type": "application/json"}
-
     response = requests.post(loader_url, headers=headers, data=json.dumps(payload), verify=False)
-
-    # 🔍 Debug log: show raw Neptune response in container logs
-    print("DEBUG Neptune Bulk Loader Response:", response.status_code, response.text)
 
     if response.status_code not in [200, 201]:
         raise Exception(f"Bulk load failed: {response.text}")
 
     return response.json()
+
+
+def poll_bulk_load_status(load_id: str, poll_interval: int = 5) -> dict:
+    """
+    Poll Neptune Bulk Load status until completion
+    :param load_id: ID returned from trigger_bulk_load
+    :param poll_interval: seconds to wait between polls
+    :return: dict containing load status
+    """
+    neptune_endpoint = os.getenv("NEPTUNE_ENDPOINT")
+    loader_url = f"https://{neptune_endpoint}:8182/loader/{load_id}"
+
+    while True:
+        response = requests.get(loader_url, verify=False)
+        if response.status_code != 200:
+            raise Exception(f"Failed to poll bulk load: {response.text}")
+
+        data = response.json()
+        status = data.get("status")
+        if status in ["LOAD_COMPLETED", "LOAD_FAILED"]:
+            return data
+        time.sleep(poll_interval)

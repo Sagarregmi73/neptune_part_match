@@ -1,6 +1,6 @@
 # lib/app/adapter/input/api/v1/controllers/part_controller.py
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from typing import List
 from lib.app.domain.dtos.part_number_dto import PartNumberDTO
 from lib.app.domain.entities.part_number import PartNumber
@@ -42,6 +42,7 @@ def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
 @router.post("/upload")
 async def upload_parts(
     file: UploadFile = File(...),
+    backup_to_s3: bool = True,
     file_usecase: UploadFileUseCase = Depends(get_file_usecase)
 ):
     if not file.filename.endswith(".xlsx"):
@@ -51,14 +52,19 @@ async def upload_parts(
     file_content = await file.read()
 
     try:
+        # Execute bulk upload workflow
         result = file_usecase.execute(BytesIO(file_content), file.filename)
+
         return {
             "message": "File processed and bulk load triggered successfully.",
             "vertices_created": result.get("vertices_created", 0),
             "edges_created": result.get("edges_created", 0),
             "s3_vertices": result.get("s3_vertices"),
             "s3_edges": result.get("s3_edges"),
-            "bulk_load_id": result.get("bulk_load_id")
+            "bulk_load_id": result.get("bulk_load_id"),
+            "bulk_status": result.get("bulk_status"),
+            "failures": result.get("failures")
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")

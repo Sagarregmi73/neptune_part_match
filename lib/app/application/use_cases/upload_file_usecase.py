@@ -1,8 +1,10 @@
+# lib/app/application/use_cases/upload_file_usecase.py
+
 import pandas as pd
 import tempfile
 import os
 from io import BytesIO
-from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
+from lib.core.aws.neptune_bulk_loader import trigger_bulk_load, poll_bulk_load_status
 from lib.core.aws.s3_client import upload_file_to_s3
 
 class UploadFileUseCase:
@@ -54,20 +56,17 @@ class UploadFileUseCase:
         # Step 5: Trigger Neptune Bulk Loader
         s3_folder_uri = f"s3://{self.s3_bucket}/neptune_bulk/"
         bulk_response = trigger_bulk_load(s3_folder_uri, mode="NEW")
+        bulk_load_id = bulk_response.get("loadId")
 
-        # ✅ Look for loadId inside payload to avoid null issue
-        bulk_load_id = None
-        if isinstance(bulk_response, dict):
-            bulk_load_id = (
-                bulk_response.get("payload", {}).get("loadId")
-                or bulk_response.get("loadId")
-            )
+        # Step 6: Poll until bulk load completes
+        bulk_status = poll_bulk_load_status(bulk_load_id)
 
         return {
-            "message": "File processed and bulk load triggered successfully.",
             "vertices_created": len(vertices_df),
             "edges_created": len(edges_df),
             "s3_vertices": vertices_s3_key,
             "s3_edges": edges_s3_key,
-            "bulk_load_id": bulk_load_id
+            "bulk_load_id": bulk_load_id,
+            "bulk_status": bulk_status.get("status"),  # final status
+            "failures": bulk_status.get("failureReason")  # if any
         }
