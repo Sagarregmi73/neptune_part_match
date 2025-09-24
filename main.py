@@ -1,6 +1,8 @@
+
+from lib.core.logging import logger
+
 from fastapi import FastAPI
 from lib.app.adapter.input.api.v1.routers import api_router
-from lib.core.logging import logger
 
 app = FastAPI(
     title="Part Matching API",

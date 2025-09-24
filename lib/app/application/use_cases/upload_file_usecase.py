@@ -1,4 +1,3 @@
-# lib/app/application/use_cases/upload_file_usecase.py
 import pandas as pd
 import tempfile
 import os
@@ -52,7 +51,6 @@ class UploadFileUseCase:
             edges.append({"~from": input_part.part_number, "~to": output_part.part_number,
                           "~label": "MATCHED", "match_type": match_type})
 
-        # Optional: Upload CSVs for Neptune Bulk Loader
         vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
         edges_df = pd.DataFrame(edges)
 

@@ -1,6 +1,3 @@
-
-
-# lib/app/adapter/input/api/v1/routers.py
 from fastapi import APIRouter
 from lib.app.adapter.input.api.v1.controllers import part_controller, match_controller
 

@@ -1,4 +1,3 @@
-# lib/core/utils/container.py
 from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
 from lib.app.application.use_cases.crud_part_usecase import CrudPartUseCase
 from lib.app.application.use_cases.match_part_usecase import MatchPartUseCase
