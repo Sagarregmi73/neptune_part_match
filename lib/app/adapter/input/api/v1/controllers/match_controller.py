@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from lib.app.domain.dtos.match_dto import MatchDTO
 from lib.app.domain.entities.match import Match
@@ -10,7 +10,7 @@ usecase = get_match_usecase()
 
 @router.post("/", response_model=MatchDTO)
 def create_match(match_dto: MatchDTO):
-    return MatchDTO(**vars(usecase.create_match(Match(match_dto.source, match_dto.target, match_dto.match_type))))
+    return MatchDTO(**vars(usecase.create_match(Match(**match_dto.dict()))))
 
 @router.get("/{source}/{target}", response_model=MatchDTO)
 def get_match(source: str, target: str):
@@ -21,7 +21,7 @@ def get_match(source: str, target: str):
 
 @router.put("/{source}/{target}", response_model=MatchDTO)
 def update_match(source: str, target: str, match_dto: MatchDTO):
-    return MatchDTO(**vars(usecase.update_match(Match(source, target, match_dto.match_type))))
+    return MatchDTO(**vars(usecase.update_match(Match(**match_dto.dict()))))
 
 @router.delete("/{source}/{target}")
 def delete_match(source: str, target: str):

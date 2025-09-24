@@ -1,5 +1,3 @@
-# lib/core/aws/s3_client.py
-
 import boto3
 import os
 
@@ -14,8 +12,9 @@ s3_client = boto3.client(
 def upload_file_to_s3(local_path: str, s3_key: str):
     """
     Upload a local file to S3.
+    
     :param local_path: Path to the local file
-    :param s3_key: S3 key/path where file will be stored
+    :param s3_key: S3 key/path where the file will be stored
     """
     bucket_name = os.getenv("S3_BUCKET_NAME")
     if not bucket_name:

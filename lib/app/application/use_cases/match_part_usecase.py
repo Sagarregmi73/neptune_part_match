@@ -20,6 +20,5 @@ class MatchPartUseCase:
     def list_matches(self):
         return self.repository.list_matches()
 
-    # Bidirectional search
     def get_matches_for_part(self, part_number: str):
         return self.repository.get_matches_for_part(part_number)

@@ -1,5 +1,3 @@
-# lib/app/adapter/output/persistence/neptune/neptune_repository.py
-
 from lib.app.application.services.repository_interface import RepositoryInterface
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
@@ -10,27 +8,47 @@ class NeptuneRepository(RepositoryInterface):
     def __init__(self):
         self.g, self.connection = get_neptune_connection()
 
-    # -------------------- PART CRUD --------------------
+    # ---------------- PART CRUD ----------------
     def create_part(self, part: PartNumber) -> PartNumber:
         self.g.addV("PartNumber")\
             .property("id", part.part_number)\
-            .property("specs", str(part.specs))\
-            .property("notes", str(part.notes)).next()
+            .property("spec1", part.spec1)\
+            .property("spec2", part.spec2)\
+            .property("spec3", part.spec3)\
+            .property("spec4", part.spec4)\
+            .property("spec5", part.spec5)\
+            .property("note1", part.note1)\
+            .property("note2", part.note2)\
+            .property("note3", part.note3).next()
         return part
 
     def get_part(self, part_number: str):
         try:
             v = self.g.V().has("PartNumber", "id", part_number).next()
-            specs = eval(v.properties["specs"][0].value) if "specs" in v.properties else {}
-            notes = eval(v.properties["notes"][0].value) if "notes" in v.properties else {}
-            return PartNumber(v.id, specs, notes)
+            return PartNumber(
+                v.id,
+                v.properties["spec1"][0].value,
+                v.properties["spec2"][0].value,
+                v.properties["spec3"][0].value,
+                v.properties["spec4"][0].value,
+                v.properties["spec5"][0].value,
+                v.properties.get("note1", [{}])[0].get("value", ""),
+                v.properties.get("note2", [{}])[0].get("value", ""),
+                v.properties.get("note3", [{}])[0].get("value", "")
+            )
         except StopIteration:
             return None
 
     def update_part(self, part: PartNumber) -> PartNumber:
         self.g.V().has("PartNumber", "id", part.part_number)\
-            .property("specs", str(part.specs))\
-            .property("notes", str(part.notes)).next()
+            .property("spec1", part.spec1)\
+            .property("spec2", part.spec2)\
+            .property("spec3", part.spec3)\
+            .property("spec4", part.spec4)\
+            .property("spec5", part.spec5)\
+            .property("note1", part.note1)\
+            .property("note2", part.note2)\
+            .property("note3", part.note3).next()
         return part
 
     def delete_part(self, part_number: str) -> bool:
@@ -41,12 +59,22 @@ class NeptuneRepository(RepositoryInterface):
         vertices = self.g.V().hasLabel("PartNumber").toList()
         parts = []
         for v in vertices:
-            specs = eval(v.properties["specs"][0].value) if "specs" in v.properties else {}
-            notes = eval(v.properties["notes"][0].value) if "notes" in v.properties else {}
-            parts.append(PartNumber(v.id, specs, notes))
+            parts.append(
+                PartNumber(
+                    v.id,
+                    v.properties["spec1"][0].value,
+                    v.properties["spec2"][0].value,
+                    v.properties["spec3"][0].value,
+                    v.properties["spec4"][0].value,
+                    v.properties["spec5"][0].value,
+                    v.properties.get("note1", [{}])[0].get("value", ""),
+                    v.properties.get("note2", [{}])[0].get("value", ""),
+                    v.properties.get("note3", [{}])[0].get("value", "")
+                )
+            )
         return parts
 
-    # -------------------- MATCH CRUD --------------------
+    # ---------------- MATCH CRUD ----------------
     def create_match(self, match: Match) -> Match:
         self.g.V().has("PartNumber", "id", match.source).as_("a")\
             .V().has("PartNumber", "id", match.target)\
@@ -57,11 +85,11 @@ class NeptuneRepository(RepositoryInterface):
         return match
 
     def get_match(self, source: str, target: str):
-        e = self.g.E().hasLabel("MATCHED")\
+        edges = self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", source))\
             .where(__.inV().has("id", target)).toList()
-        if e:
-            return Match(source, target, e[0].properties["match_type"][0].value)
+        if edges:
+            return Match(source, target, edges[0].properties["match_type"][0].value)
         return None
 
     def update_match(self, match: Match) -> Match:
@@ -79,17 +107,12 @@ class NeptuneRepository(RepositoryInterface):
 
     def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
-        matches = [Match(e.outV.id, e.inV.id, e.properties["match_type"][0].value) for e in edges]
-        return matches
+        return [Match(e.outV.id, e.inV.id, e.properties["match_type"][0].value) for e in edges]
 
-    # -------------------- BIDIRECTIONAL SEARCH --------------------
     def get_matches_for_part(self, part_number: str):
-        edges_out = self.g.V().has("PartNumber", "id", part_number)\
-                        .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
-        edges_in = self.g.V().has("PartNumber", "id", part_number)\
-                        .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
+        edges_out = self.g.V().has("PartNumber", "id", part_number).outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
+        edges_in  = self.g.V().has("PartNumber", "id", part_number).inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
         matches = []
         for e in edges_out + edges_in:
-            match_type = e["e"].properties["match_type"][0].value
-            matches.append(Match(e["e"].outV.id, e["e"].inV.id, match_type))
+            matches.append(Match(e["e"].outV.id, e["e"].inV.id, e["e"].properties["match_type"][0].value))
         return matches

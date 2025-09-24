@@ -1,5 +1,3 @@
-# lib/app/adapter/input/api/v1/controllers/part_controller.py
-
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from typing import List
 from lib.app.domain.dtos.part_number_dto import PartNumberDTO
@@ -11,11 +9,9 @@ from io import BytesIO
 
 router = APIRouter()
 
-# ------------------- Part CRUD Endpoints -------------------
-
 @router.post("/", response_model=PartNumberDTO)
 def create_part(part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    part = PartNumber(part_dto.part_number, part_dto.specs, part_dto.notes)
+    part = PartNumber(**part_dto.dict())
     return PartNumberDTO(**vars(usecase.create_part(part)))
 
 @router.get("/{part_number}", response_model=PartNumberDTO)
@@ -27,7 +23,7 @@ def get_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_useca
 
 @router.put("/{part_number}", response_model=PartNumberDTO)
 def update_part(part_number: str, part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    part = PartNumber(part_number, part_dto.specs, part_dto.notes)
+    part = PartNumber(**part_dto.dict())
     return PartNumberDTO(**vars(usecase.update_part(part)))
 
 @router.delete("/{part_number}")
@@ -38,31 +34,12 @@ def delete_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_us
 def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
     return [PartNumberDTO(**vars(p)) for p in usecase.list_parts()]
 
-# ------------------- File Upload & Bulk Load -------------------
-
 @router.post("/upload")
-async def upload_parts(
-    file: UploadFile = File(...),
-    backup_to_s3: bool = True,
-    file_usecase: UploadFileUseCase = Depends(get_file_usecase)
-):
+async def upload_parts(file: UploadFile = File(...),
+                       backup_to_s3: bool = True,
+                       file_usecase: UploadFileUseCase = Depends(get_file_usecase)):
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only XLSX files are supported")
-
     file_content = await file.read()
-
-    try:
-        # Execute bulk upload workflow (old behavior: returns loadId immediately)
-        result = file_usecase.execute(BytesIO(file_content), file.filename)
-
-        return {
-            "message": "File processed and bulk load triggered successfully.",
-            "vertices_created": result.get("vertices_created", 0),
-            "edges_created": result.get("edges_created", 0),
-            "s3_vertices": result.get("s3_vertices"),
-            "s3_edges": result.get("s3_edges"),
-            "bulk_load_id": result.get("bulk_load_id")  # real loadId immediately
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+    result = file_usecase.execute(BytesIO(file_content), file.filename)
+    return result

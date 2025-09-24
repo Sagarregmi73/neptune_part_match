@@ -1,6 +1,6 @@
 class Match:
     """
-    Represents a match (replacement) between two parts
+    Represents a match (replacement) between two parts.
     """
     def __init__(self, source: str, target: str, match_type: str):
         self.source = source

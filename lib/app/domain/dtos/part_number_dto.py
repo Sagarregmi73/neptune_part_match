@@ -1,7 +1,12 @@
 from pydantic import BaseModel
-from typing import Dict
 
 class PartNumberDTO(BaseModel):
     part_number: str
-    specs: Dict[str, str]  # dynamic specs
-    notes: Dict[str, str] = {}  # dynamic notes
+    spec1: str
+    spec2: str
+    spec3: str
+    spec4: str
+    spec5: str
+    note1: str = ""
+    note2: str = ""
+    note3: str = ""
