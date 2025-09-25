@@ -1,142 +1,122 @@
-from lib.app.application.services.repository_interface import RepositoryInterface
+import pandas as pd
+import tempfile
+import os
+from io import BytesIO
+import asyncio
+import aiofiles
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
-from lib.core.aws.neptune_client import get_neptune_connection
-from gremlin_python.process.graph_traversal import __
+from lib.app.domain.services.match_logic import MatchLogic
+from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
+from lib.core.aws.s3_client import upload_file_to_s3_async
 
+class UploadFileUseCase:
+    def __init__(self, part_usecase, match_usecase, backup_to_s3=True):
+        self.part_usecase = part_usecase
+        self.match_usecase = match_usecase
+        self.backup_to_s3 = backup_to_s3
+        self.s3_bucket = os.getenv("S3_BUCKET_NAME")
+        self.logic = MatchLogic()
 
-def _get_prop(obj, key: str, default=""):
-    """Safely get property from Neptune Vertex/Edge. Always returns string."""
-    try:
-        if hasattr(obj, "properties") and key in obj.properties:
-            props = obj.properties[key]
-            if isinstance(props, list) and len(props) > 0:
-                return props[0].value or ""
-    except Exception:
-        pass
-    return default
+    @staticmethod
+    def safe_str(val):
+        """Convert value to string, replace None/NaN with empty string."""
+        if pd.isna(val) or val is None:
+            return ""
+        return str(val)
 
+    async def execute(self, file_bytes: BytesIO, filename: str) -> dict:
+        # Save uploaded file to a temporary file
+        async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            await tmp.write(file_bytes.read())
+            tmp_path = tmp.name
 
-class NeptuneRepository(RepositoryInterface):
-    def __init__(self):
-        self.g, self.connection = get_neptune_connection()
+        # Read Excel file
+        df = pd.read_excel(tmp_path)
+        df = df.iloc[2:]  # skip first 2 rows (header + template)
+        df = df.fillna("")  # Replace NaN with empty string
 
-    # ---------- PART CRUD ----------
-    def create_part(self, part: PartNumber) -> PartNumber:
-        self.g.addV("PartNumber")\
-            .property("id", part.part_number)\
-            .property("spec1", part.spec1)\
-            .property("spec2", part.spec2)\
-            .property("spec3", part.spec3)\
-            .property("spec4", part.spec4)\
-            .property("spec5", part.spec5)\
-            .property("note1", part.note1)\
-            .property("note2", part.note2)\
-            .property("note3", part.note3)\
-            .next()
-        return part
+        # Strip leading/trailing spaces from column names
+        df.columns = [str(c).strip() for c in df.columns]
 
-    def get_part(self, part_number: str):
-        try:
-            v = self.g.V().has("PartNumber", "id", part_number).next()
-            return PartNumber(
-                _get_prop(v, "id", v.id),
-                _get_prop(v, "spec1"),
-                _get_prop(v, "spec2"),
-                _get_prop(v, "spec3"),
-                _get_prop(v, "spec4"),
-                _get_prop(v, "spec5"),
-                _get_prop(v, "note1", ""),
-                _get_prop(v, "note2", ""),
-                _get_prop(v, "note3", "")
+        vertices, edges = [], []
+
+        for _, row in df.iterrows():
+            input_part = PartNumber(
+                self.safe_str(row.get("Input Part Number", "")),
+                self.safe_str(row.get("Input Spec 1", "")),
+                self.safe_str(row.get("Input Spec 2", "")),
+                self.safe_str(row.get("Input Spec 3", "")),
+                self.safe_str(row.get("Input Spec 4", "")),
+                self.safe_str(row.get("Input Spec 5", "")),
+                self.safe_str(row.get("Input Note 1", "")),
+                self.safe_str(row.get("Input Note 2", "")),
+                self.safe_str(row.get("Input Note 3", ""))
             )
-        except StopIteration:
-            return None
+            output_part = PartNumber(
+                self.safe_str(row.get("Output Part Number", "")),
+                self.safe_str(row.get("Output Spec 1", "")),
+                self.safe_str(row.get("Output Spec 2", "")),
+                self.safe_str(row.get("Output Spec 3", "")),
+                self.safe_str(row.get("Output Spec 4", "")),
+                self.safe_str(row.get("Output Spec 5", "")),
+                self.safe_str(row.get("Output Note 1", "")),
+                self.safe_str(row.get("Output Note 2", "")),
+                self.safe_str(row.get("Output Note 3", ""))
+            )
 
-    def update_part(self, part: PartNumber) -> PartNumber:
-        self.g.V().has("PartNumber", "id", part.part_number)\
-            .property("spec1", part.spec1)\
-            .property("spec2", part.spec2)\
-            .property("spec3", part.spec3)\
-            .property("spec4", part.spec4)\
-            .property("spec5", part.spec5)\
-            .property("note1", part.note1)\
-            .property("note2", part.note2)\
-            .property("note3", part.note3)\
-            .next()
-        return part
+            # Insert parts in Neptune safely in async
+            await asyncio.to_thread(self.part_usecase.create_part, input_part)
+            await asyncio.to_thread(self.part_usecase.create_part, output_part)
 
-    def delete_part(self, part_number: str) -> bool:
-        self.g.V().has("PartNumber", "id", part_number).drop().iterate()
-        return True
-
-    def list_parts(self):
-        vertices = self.g.V().hasLabel("PartNumber").toList()
-        parts = []
-        for v in vertices:
-            parts.append(
-                PartNumber(
-                    _get_prop(v, "id", v.id),
-                    _get_prop(v, "spec1"),
-                    _get_prop(v, "spec2"),
-                    _get_prop(v, "spec3"),
-                    _get_prop(v, "spec4"),
-                    _get_prop(v, "spec5"),
-                    _get_prop(v, "note1", ""),
-                    _get_prop(v, "note2", ""),
-                    _get_prop(v, "note3", "")
+            # Determine match type
+            match_type = self.safe_str(row.get("Match Type"))
+            if not match_type or match_type.lower() in ["", "auto"]:
+                match_type = self.logic.determine_match(
+                    {f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
+                    {f"note{i+1}": getattr(input_part, f"note{i+1}") for i in range(3)},
+                    {f"spec{i+1}": getattr(output_part, f"spec{i+1}") for i in range(5)},
+                    {f"note{i+1}": getattr(output_part, f"note{i+1}") for i in range(3)}
                 )
-            )
-        return parts
 
-    # ---------- MATCH CRUD ----------
-    def create_match(self, match: Match) -> Match:
-        self.g.V().has("PartNumber", "id", match.source).as_("a")\
-            .V().has("PartNumber", "id", match.target)\
-            .coalesce(
-                __.inE("MATCHED").where(__.outV().as_("a")),
-                __.addE("MATCHED").from_("a").property("match_type", match.match_type)
-            ).next()
-        return match
+            match = Match(input_part.part_number, output_part.part_number, match_type)
+            await asyncio.to_thread(self.match_usecase.create_match, match)
 
-    def get_match(self, source: str, target: str):
-        edges = self.g.E().hasLabel("MATCHED")\
-            .where(__.outV().has("id", source))\
-            .where(__.inV().has("id", target)).toList()
-        if edges:
-            return Match(source, target, _get_prop(edges[0], "match_type"))
-        return None
+            # Prepare vertices and edges for Neptune bulk loader
+            vertices.append({
+                "~id": input_part.part_number, "~label": "PartNumber",
+                **{f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
+                **{f"note{i+1}": getattr(input_part, f"note{i+1}") for i in range(3)}
+            })
+            vertices.append({
+                "~id": output_part.part_number, "~label": "PartNumber",
+                **{f"spec{i+1}": getattr(output_part, f"spec{i+1}") for i in range(5)},
+                **{f"note{i+1}": getattr(output_part, f"note{i+1}") for i in range(3)}
+            })
+            edges.append({
+                "~from": input_part.part_number, "~to": output_part.part_number,
+                "~label": "MATCHED", "match_type": match_type
+            })
 
-    def update_match(self, match: Match) -> Match:
-        e = self.g.E().hasLabel("MATCHED")\
-            .where(__.outV().has("id", match.source))\
-            .where(__.inV().has("id", match.target)).next()
-        e.property("match_type", match.match_type)
-        return match
+        # Create CSVs for Neptune bulk loader
+        vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
+        edges_df = pd.DataFrame(edges)
 
-    def delete_match(self, source: str, target: str) -> bool:
-        self.g.E().hasLabel("MATCHED")\
-            .where(__.outV().has("id", source))\
-            .where(__.inV().has("id", target)).drop().iterate()
-        return True
+        vertices_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
+        edges_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
+        vertices_df.to_csv(vertices_csv, index=False)
+        edges_df.to_csv(edges_csv, index=False)
 
-    def list_matches(self):
-        edges = self.g.E().hasLabel("MATCHED").toList()
-        return [Match(e.outV.id, e.inV.id, _get_prop(e, "match_type")) for e in edges]
+        if self.backup_to_s3:
+            await upload_file_to_s3_async(vertices_csv, f"neptune_bulk/{os.path.basename(vertices_csv)}")
+            await upload_file_to_s3_async(edges_csv, f"neptune_bulk/{os.path.basename(edges_csv)}")
 
-    def get_matches_for_part(self, part_number: str):
-        edges_out = self.g.V().has("PartNumber", "id", part_number)\
-            .outE("MATCHED").as_("e").inV().as_("v").select("e", "v").toList()
-        edges_in = self.g.V().has("PartNumber", "id", part_number)\
-            .inE("MATCHED").as_("e").outV().as_("v").select("e", "v").toList()
-        matches = []
-        for e in edges_out + edges_in:
-            matches.append(Match(e["e"].outV.id, e["e"].inV.id, _get_prop(e["e"], "match_type")))
-        return matches
+        bulk_response = await trigger_bulk_load(f"s3://{self.s3_bucket}/neptune_bulk/", mode="NEW")
+        bulk_load_id = bulk_response.get("payload", {}).get("loadId") if isinstance(bulk_response, dict) else None
 
-    def close(self):
-        try:
-            if self.connection:
-                self.connection.close()
-        except Exception as e:
-            print("Error closing Neptune connection:", e)
+        return {
+            "message": "File processed and matches created successfully",
+            "vertices_created": len(vertices_df),
+            "edges_created": len(edges_df),
+            "bulk_load_id": bulk_load_id
+        }
