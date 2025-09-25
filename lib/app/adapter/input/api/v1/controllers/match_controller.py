@@ -46,9 +46,13 @@ def delete_match(
 def list_matches(usecase: MatchPartUseCase = Depends(get_match_usecase)):
     return usecase.list_matches()
 
-@router.get("/search/{part_number}", response_model=List[MatchDTO])
-def search_matches(
-    part_number: str,
-    usecase: MatchPartUseCase = Depends(get_match_usecase)
-):
-    return usecase.get_matches_for_part(part_number)
+@router.get("/search/{part_number}")
+def search_matches(part_number: str, usecase: MatchPartUseCase = Depends(get_match_usecase)):
+    result = usecase.get_matches_for_part(part_number)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
+
+
