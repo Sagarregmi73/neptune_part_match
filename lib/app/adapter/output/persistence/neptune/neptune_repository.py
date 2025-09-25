@@ -5,13 +5,13 @@ from lib.core.aws.neptune_client import get_neptune_connection
 from gremlin_python.process.graph_traversal import __
 
 
-def _get_prop(obj, key: str, default=None):
-    """Safely get property from Neptune Vertex/Edge."""
+def _get_prop(obj, key: str, default=""):
+    """Safely get property from Neptune Vertex/Edge. Always returns string."""
     try:
         if hasattr(obj, "properties") and key in obj.properties:
             props = obj.properties[key]
             if isinstance(props, list) and len(props) > 0:
-                return props[0].value
+                return props[0].value or ""
     except Exception:
         pass
     return default
