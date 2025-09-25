@@ -33,40 +33,43 @@ class UploadFileUseCase:
 
         # Read Excel file
         df = pd.read_excel(tmp_path)
-        df = df.iloc[2:]  # skip first 2 rows if needed
-        df = df.fillna("")  # Replace any NaN with empty string
+        df = df.iloc[2:]  # skip first 2 rows (header + template)
+        df = df.fillna("")  # Replace NaN with empty string
+
+        # Strip leading/trailing spaces from column names
+        df.columns = [str(c).strip() for c in df.columns]
 
         vertices, edges = [], []
 
         for _, row in df.iterrows():
             input_part = PartNumber(
-                self.safe_str(row.get("Input Part Number")),
-                self.safe_str(row.get("Input Spec 1")),
-                self.safe_str(row.get("Input Spec 2")),
-                self.safe_str(row.get("Input Spec 3")),
-                self.safe_str(row.get("Input Spec 4")),
-                self.safe_str(row.get("Input Spec 5")),
-                self.safe_str(row.get("Input Note 1")),
-                self.safe_str(row.get("Input Note 2")),
-                self.safe_str(row.get("Input Note 3"))
+                self.safe_str(row.get("Input Part Number", "")),
+                self.safe_str(row.get("Input Spec 1", "")),
+                self.safe_str(row.get("Input Spec 2", "")),
+                self.safe_str(row.get("Input Spec 3", "")),
+                self.safe_str(row.get("Input Spec 4", "")),
+                self.safe_str(row.get("Input Spec 5", "")),
+                self.safe_str(row.get("Input Note 1", "")),
+                self.safe_str(row.get("Input Note 2", "")),
+                self.safe_str(row.get("Input Note 3", ""))
             )
             output_part = PartNumber(
-                self.safe_str(row.get("Output Part Number")),
-                self.safe_str(row.get("Output Spec 1")),
-                self.safe_str(row.get("Output Spec 2")),
-                self.safe_str(row.get("Output Spec 3")),
-                self.safe_str(row.get("Output Spec 4")),
-                self.safe_str(row.get("Output Spec 5")),
-                self.safe_str(row.get("Output Note 1")),
-                self.safe_str(row.get("Output Note 2")),
-                self.safe_str(row.get("Output Note 3"))
+                self.safe_str(row.get("Output Part Number", "")),
+                self.safe_str(row.get("Output Spec 1", "")),
+                self.safe_str(row.get("Output Spec 2", "")),
+                self.safe_str(row.get("Output Spec 3", "")),
+                self.safe_str(row.get("Output Spec 4", "")),
+                self.safe_str(row.get("Output Spec 5", "")),
+                self.safe_str(row.get("Output Note 1", "")),
+                self.safe_str(row.get("Output Note 2", "")),
+                self.safe_str(row.get("Output Note 3", ""))
             )
 
-            # Run synchronous repository calls safely in async function
+            # Insert parts in Neptune safely in async
             await asyncio.to_thread(self.part_usecase.create_part, input_part)
             await asyncio.to_thread(self.part_usecase.create_part, output_part)
 
-            # Determine match type if not specified
+            # Determine match type
             match_type = self.safe_str(row.get("Match Type"))
             if not match_type or match_type.lower() in ["", "auto"]:
                 match_type = self.logic.determine_match(
@@ -79,6 +82,7 @@ class UploadFileUseCase:
             match = Match(input_part.part_number, output_part.part_number, match_type)
             await asyncio.to_thread(self.match_usecase.create_match, match)
 
+            # Prepare vertices and edges for Neptune bulk loader
             vertices.append({
                 "~id": input_part.part_number, "~label": "PartNumber",
                 **{f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
