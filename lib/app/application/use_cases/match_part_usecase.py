@@ -8,7 +8,7 @@ class MatchPartUseCase:
         self.repository = repository
 
     def create_match(self, match: Match) -> MatchDTO:
-        saved = self.repository.save_match(match)
+        saved = self.repository.create_match(match)  # <-- fixed here
         return MatchDTO(**saved.__dict__)
 
     def get_match(self, source: str, target: str) -> MatchDTO | None:
@@ -27,19 +27,15 @@ class MatchPartUseCase:
         return [MatchDTO(**m.__dict__) for m in matches]
 
     def get_matches_for_part(self, part_number: str) -> dict:
-        # Get the main search part
         main_part = self.repository.get_part(part_number)
         if not main_part:
             return {"error": f"Part {part_number} not found"}
 
-        # Get all matches (both directions)
         matches = self.repository.get_matches_for_part(part_number)
 
-        # Prepare replacement list
         replacements = []
         for m in matches:
             if m.match_type.lower() in ["perfect", "partial"]:
-                # Get full info for replacement part
                 replacement_part = self.repository.get_part(m.in_part(part_number))
                 if replacement_part:
                     replacements.append({

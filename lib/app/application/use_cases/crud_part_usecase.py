@@ -8,7 +8,7 @@ class CrudPartUseCase:
         self.repository = repository
 
     def create_part(self, part: PartNumber) -> PartNumberDTO:
-        saved = self.repository.save_part(part)
+        saved = self.repository.create_part(part)  # <-- fixed here
         return PartNumberDTO(**saved.__dict__)
 
     def get_part(self, part_number: str) -> PartNumberDTO | None:
