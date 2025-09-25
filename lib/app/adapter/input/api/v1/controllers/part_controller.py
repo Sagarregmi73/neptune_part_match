@@ -10,40 +10,41 @@ from io import BytesIO
 router = APIRouter()
 
 @router.post("/", response_model=PartNumberDTO)
-def create_part(
+async def create_part(
     part_dto: PartNumberDTO,
     usecase: CrudPartUseCase = Depends(get_part_usecase)
 ):
-    return usecase.create_part(PartNumber(**part_dto.dict()))
+    return await usecase.create_part(PartNumber(**part_dto.dict()))
 
 @router.get("/{part_number}", response_model=PartNumberDTO)
-def get_part(
+async def get_part(
     part_number: str,
     usecase: CrudPartUseCase = Depends(get_part_usecase)
 ):
-    part = usecase.get_part(part_number)
+    part = await usecase.get_part(part_number)
     if not part:
         raise HTTPException(status_code=404, detail="Part not found")
     return part
 
 @router.put("/{part_number}", response_model=PartNumberDTO)
-def update_part(
+async def update_part(
     part_number: str,
     part_dto: PartNumberDTO,
     usecase: CrudPartUseCase = Depends(get_part_usecase)
 ):
-    return usecase.update_part(PartNumber(**part_dto.dict()))
+    return await usecase.update_part(PartNumber(**part_dto.dict()))
 
 @router.delete("/{part_number}")
-def delete_part(
+async def delete_part(
     part_number: str,
     usecase: CrudPartUseCase = Depends(get_part_usecase)
 ):
-    return {"success": usecase.delete_part(part_number)}
+    success = await usecase.delete_part(part_number)
+    return {"success": success}
 
 @router.get("/", response_model=List[PartNumberDTO])
-def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    return usecase.list_parts()
+async def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
+    return await usecase.list_parts()
 
 @router.post("/upload")
 async def upload_parts(
@@ -54,4 +55,4 @@ async def upload_parts(
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only XLSX files are supported")
     file_content = await file.read()
-    return file_usecase.execute(BytesIO(file_content), file.filename)
+    return await file_usecase.execute(BytesIO(file_content), file.filename)
