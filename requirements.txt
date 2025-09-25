@@ -13,3 +13,4 @@ sqlalchemy
 dnspython
 requests
 aiofiles
+httpx
