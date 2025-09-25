@@ -11,8 +11,8 @@ from lib.app.domain.entities.match import Match
 
 class UploadFileUseCase:
     def __init__(self, part_usecase, match_usecase, backup_to_s3=True):
-        self.part_usecase = part_usecase
-        self.match_usecase = match_usecase
+        self.part_usecase = part_usecase  # now sync
+        self.match_usecase = match_usecase  # now sync
         self.backup_to_s3 = backup_to_s3
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
         self.logic = MatchLogic()
@@ -52,9 +52,9 @@ class UploadFileUseCase:
                 row.get("Output Note 3", "")
             )
 
-            # Async save parts
-            await self.part_usecase.create_part(input_part)
-            await self.part_usecase.create_part(output_part)
+            # Sync save parts
+            self.part_usecase.create_part(input_part)
+            self.part_usecase.create_part(output_part)
 
             # Determine match type automatically
             match_type = row.get("Match Type")
@@ -67,7 +67,7 @@ class UploadFileUseCase:
                 )
 
             match = Match(input_part.part_number, output_part.part_number, match_type)
-            await self.match_usecase.create_match(match)
+            self.match_usecase.create_match(match)  # sync
 
             # Prepare CSV for Neptune bulk loader
             vertices.append({
@@ -98,6 +98,7 @@ class UploadFileUseCase:
             await upload_file_to_s3_async(vertices_csv, f"neptune_bulk/{os.path.basename(vertices_csv)}")
             await upload_file_to_s3_async(edges_csv, f"neptune_bulk/{os.path.basename(edges_csv)}")
 
+        # Trigger Neptune bulk load
         bulk_response = await trigger_bulk_load(f"s3://{self.s3_bucket}/neptune_bulk/", mode="NEW")
         bulk_load_id = bulk_response.get("payload", {}).get("loadId") if isinstance(bulk_response, dict) else None
 

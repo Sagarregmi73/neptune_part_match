@@ -9,8 +9,8 @@ class NeptuneRepository(RepositoryInterface):
         self.g, self.connection = get_neptune_connection()
 
     # ---------- PART CRUD ----------
-    async def create_part(self, part: PartNumber) -> PartNumber:
-        await self.g.addV("PartNumber")\
+    def create_part(self, part: PartNumber) -> PartNumber:
+        self.g.addV("PartNumber")\
             .property("id", part.part_number)\
             .property("spec1", part.spec1)\
             .property("spec2", part.spec2)\
@@ -20,12 +20,12 @@ class NeptuneRepository(RepositoryInterface):
             .property("note1", part.note1)\
             .property("note2", part.note2)\
             .property("note3", part.note3)\
-            .nextAsync()
+            .next()
         return part
 
-    async def get_part(self, part_number: str):
+    def get_part(self, part_number: str):
         try:
-            v = await self.g.V().has("PartNumber", "id", part_number).nextAsync()
+            v = self.g.V().has("PartNumber", "id", part_number).next()
             return PartNumber(
                 v.id,
                 v.properties["spec1"][0].value,
@@ -40,8 +40,8 @@ class NeptuneRepository(RepositoryInterface):
         except StopIteration:
             return None
 
-    async def update_part(self, part: PartNumber) -> PartNumber:
-        await self.g.V().has("PartNumber", "id", part.part_number)\
+    def update_part(self, part: PartNumber) -> PartNumber:
+        self.g.V().has("PartNumber", "id", part.part_number)\
             .property("spec1", part.spec1)\
             .property("spec2", part.spec2)\
             .property("spec3", part.spec3)\
@@ -50,15 +50,15 @@ class NeptuneRepository(RepositoryInterface):
             .property("note1", part.note1)\
             .property("note2", part.note2)\
             .property("note3", part.note3)\
-            .nextAsync()
+            .next()
         return part
 
-    async def delete_part(self, part_number: str) -> bool:
-        await self.g.V().has("PartNumber", "id", part_number).drop().iterateAsync()
+    def delete_part(self, part_number: str) -> bool:
+        self.g.V().has("PartNumber", "id", part_number).drop().iterate()
         return True
 
-    async def list_parts(self):
-        vertices = await self.g.V().hasLabel("PartNumber").toListAsync()
+    def list_parts(self):
+        vertices = self.g.V().hasLabel("PartNumber").toList()
         parts = []
         for v in vertices:
             parts.append(
@@ -77,53 +77,53 @@ class NeptuneRepository(RepositoryInterface):
         return parts
 
     # ---------- MATCH CRUD ----------
-    async def create_match(self, match: Match) -> Match:
-        await self.g.V().has("PartNumber", "id", match.source).as_("a")\
+    def create_match(self, match: Match) -> Match:
+        self.g.V().has("PartNumber", "id", match.source).as_("a")\
             .V().has("PartNumber", "id", match.target)\
             .coalesce(
                 __.inE("MATCHED").where(__.outV().as_("a")),
                 __.addE("MATCHED").from_("a").property("match_type", match.match_type)
-            ).nextAsync()
+            ).next()
         return match
 
-    async def get_match(self, source: str, target: str):
-        edges = await self.g.E().hasLabel("MATCHED")\
+    def get_match(self, source: str, target: str):
+        edges = self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", source))\
-            .where(__.inV().has("id", target)).toListAsync()
+            .where(__.inV().has("id", target)).toList()
         if edges:
             return Match(source, target, edges[0].properties["match_type"][0].value)
         return None
 
-    async def update_match(self, match: Match) -> Match:
-        e = await self.g.E().hasLabel("MATCHED")\
+    def update_match(self, match: Match) -> Match:
+        e = self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", match.source))\
-            .where(__.inV().has("id", match.target)).nextAsync()
-        await e.property("match_type", match.match_type)
+            .where(__.inV().has("id", match.target)).next()
+        e.property("match_type", match.match_type)
         return match
 
-    async def delete_match(self, source: str, target: str) -> bool:
-        await self.g.E().hasLabel("MATCHED")\
+    def delete_match(self, source: str, target: str) -> bool:
+        self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", source))\
-            .where(__.inV().has("id", target)).drop().iterateAsync()
+            .where(__.inV().has("id", target)).drop().iterate()
         return True
 
-    async def list_matches(self):
-        edges = await self.g.E().hasLabel("MATCHED").toListAsync()
+    def list_matches(self):
+        edges = self.g.E().hasLabel("MATCHED").toList()
         return [Match(e.outV.id, e.inV.id, e.properties["match_type"][0].value) for e in edges]
 
-    async def get_matches_for_part(self, part_number: str):
-        edges_out = await self.g.V().has("PartNumber", "id", part_number)\
-            .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toListAsync()
-        edges_in  = await self.g.V().has("PartNumber", "id", part_number)\
-            .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toListAsync()
+    def get_matches_for_part(self, part_number: str):
+        edges_out = self.g.V().has("PartNumber", "id", part_number)\
+            .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
+        edges_in  = self.g.V().has("PartNumber", "id", part_number)\
+            .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
         matches = []
         for e in edges_out + edges_in:
             matches.append(Match(e["e"].outV.id, e["e"].inV.id, e["e"].properties["match_type"][0].value))
         return matches
 
-    async def close(self):
+    def close(self):
         try:
             if self.connection:
-                await self.connection.closeAsync()
+                self.connection.close()
         except Exception as e:
             print("Error closing Neptune connection:", e)

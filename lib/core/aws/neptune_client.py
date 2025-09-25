@@ -4,7 +4,7 @@ import os
 
 def get_neptune_connection():
     """
-    Returns async Gremlin traversal source (g) and closable connection for Neptune.
+    Returns sync Gremlin traversal source (g) and closable connection for Neptune.
     """
     endpoint = os.getenv("NEPTUNE_ENDPOINT")
     port = os.getenv("NEPTUNE_PORT", 8182)

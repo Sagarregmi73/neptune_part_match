@@ -11,28 +11,28 @@ router = APIRouter()
 
 # ---------- CRUD ----------
 @router.post("/", response_model=PartNumberDTO)
-async def create_part(part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    return await usecase.create_part(PartNumber(**part_dto.dict()))
+def create_part(part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
+    return usecase.create_part(PartNumber(**part_dto.dict()))
 
 @router.get("/{part_number}", response_model=PartNumberDTO)
-async def get_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    part = await usecase.get_part(part_number)
+def get_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_usecase)):
+    part = usecase.get_part(part_number)
     if not part:
         raise HTTPException(status_code=404, detail="Part not found")
     return part
 
 @router.put("/{part_number}", response_model=PartNumberDTO)
-async def update_part(part_number: str, part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    return await usecase.update_part(PartNumber(**part_dto.dict()))
+def update_part(part_number: str, part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
+    return usecase.update_part(PartNumber(**part_dto.dict()))
 
 @router.delete("/{part_number}")
-async def delete_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    success = await usecase.delete_part(part_number)
+def delete_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_usecase)):
+    success = usecase.delete_part(part_number)
     return {"success": success}
 
 @router.get("/", response_model=List[PartNumberDTO])
-async def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
-    return await usecase.list_parts()
+def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
+    return usecase.list_parts()
 
 # ---------- File Upload ----------
 @router.post("/upload")
