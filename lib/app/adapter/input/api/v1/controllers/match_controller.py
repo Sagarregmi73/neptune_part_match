@@ -8,29 +8,47 @@ from lib.core.utils.container import get_match_usecase
 router = APIRouter()
 
 @router.post("/", response_model=MatchDTO)
-def create_match(match_dto: MatchDTO, usecase: MatchPartUseCase = Depends(get_match_usecase)):
-    return MatchDTO(**vars(usecase.create_match(Match(**match_dto.dict()))))
+def create_match(
+    match_dto: MatchDTO,
+    usecase: MatchPartUseCase = Depends(get_match_usecase)
+):
+    return usecase.create_match(Match(**match_dto.dict()))
 
 @router.get("/{source}/{target}", response_model=MatchDTO)
-def get_match(source: str, target: str, usecase: MatchPartUseCase = Depends(get_match_usecase)):
+def get_match(
+    source: str,
+    target: str,
+    usecase: MatchPartUseCase = Depends(get_match_usecase)
+):
     match = usecase.get_match(source, target)
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
-    return MatchDTO(**vars(match))
+    return match
 
 @router.put("/{source}/{target}", response_model=MatchDTO)
-def update_match(source: str, target: str, match_dto: MatchDTO, usecase: MatchPartUseCase = Depends(get_match_usecase)):
-    return MatchDTO(**vars(usecase.update_match(Match(**match_dto.dict()))))
+def update_match(
+    source: str,
+    target: str,
+    match_dto: MatchDTO,
+    usecase: MatchPartUseCase = Depends(get_match_usecase)
+):
+    return usecase.update_match(Match(**match_dto.dict()))
 
 @router.delete("/{source}/{target}")
-def delete_match(source: str, target: str, usecase: MatchPartUseCase = Depends(get_match_usecase)):
+def delete_match(
+    source: str,
+    target: str,
+    usecase: MatchPartUseCase = Depends(get_match_usecase)
+):
     return {"success": usecase.delete_match(source, target)}
 
 @router.get("/", response_model=List[MatchDTO])
 def list_matches(usecase: MatchPartUseCase = Depends(get_match_usecase)):
-    return [MatchDTO(**vars(m)) for m in usecase.list_matches()]
+    return usecase.list_matches()
 
 @router.get("/search/{part_number}", response_model=List[MatchDTO])
-def search_matches(part_number: str, usecase: MatchPartUseCase = Depends(get_match_usecase)):
-    matches = usecase.get_matches_for_part(part_number)
-    return [MatchDTO(**vars(m)) for m in matches]
+def search_matches(
+    part_number: str,
+    usecase: MatchPartUseCase = Depends(get_match_usecase)
+):
+    return usecase.get_matches_for_part(part_number)
