@@ -7,6 +7,8 @@ from lib.core.utils.container import get_match_usecase
 
 router = APIRouter()
 
+# ---------- CRUD ----------
+
 @router.post("/", response_model=MatchDTO)
 def create_match(match_dto: MatchDTO, usecase: MatchPartUseCase = Depends(get_match_usecase)):
     return usecase.create_match(Match(**match_dto.dict()))
@@ -31,9 +33,11 @@ def delete_match(source: str, target: str, usecase: MatchPartUseCase = Depends(g
 def list_matches(usecase: MatchPartUseCase = Depends(get_match_usecase)):
     return usecase.list_matches()
 
-@router.get("/search/{part_number}")
+
+# ---------- Get matches for a part ----------
+@router.get("/search/{part_number}", response_model=List[MatchDTO])
 def search_matches(part_number: str, usecase: MatchPartUseCase = Depends(get_match_usecase)):
-    result = usecase.get_matches_for_part(part_number)
-    if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
-    return result
+    matches = usecase.get_matches_for_part(part_number)
+    if not matches:
+        raise HTTPException(status_code=404, detail=f"No matches found for part {part_number}")
+    return matches

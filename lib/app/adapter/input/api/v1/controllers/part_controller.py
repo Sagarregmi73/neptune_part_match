@@ -10,6 +10,7 @@ from lib.core.utils.container import get_part_usecase, get_file_usecase
 router = APIRouter()
 
 # ---------- CRUD ----------
+
 @router.post("/", response_model=PartNumberDTO)
 def create_part(part_dto: PartNumberDTO, usecase: CrudPartUseCase = Depends(get_part_usecase)):
     return usecase.create_part(PartNumber(**part_dto.dict()))
@@ -33,6 +34,7 @@ def delete_part(part_number: str, usecase: CrudPartUseCase = Depends(get_part_us
 @router.get("/", response_model=List[PartNumberDTO])
 def list_parts(usecase: CrudPartUseCase = Depends(get_part_usecase)):
     return usecase.list_parts()
+
 
 # ---------- File Upload ----------
 @router.post("/upload")
