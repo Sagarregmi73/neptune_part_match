@@ -7,6 +7,7 @@ from lib.app.domain.entities.match import Match
 from lib.app.domain.services.match_logic import MatchLogic
 from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 from lib.core.aws.s3_client import upload_file_to_s3_async
+import os
 
 class UploadFileUseCase:
     def __init__(self, part_usecase, match_usecase, backup_to_s3=True):
