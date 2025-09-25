@@ -1,27 +1,41 @@
+from lib.app.application.services.repository_interface import RepositoryInterface
 from lib.app.domain.entities.part_number import PartNumber
-from lib.app.domain.dtos.part_number_dto import PartNumberDTO
-from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
-
+from lib.app.domain.entities.match import Match
 
 class CrudPartUseCase:
-    def __init__(self, repository: NeptuneRepository):
+    def __init__(self, repository: RepositoryInterface):
         self.repository = repository
 
-    def create_part(self, part: PartNumber) -> PartNumberDTO:
-        saved = self.repository.create_part(part)  # <-- fixed here
-        return PartNumberDTO(**saved.__dict__)
+    async def create_part(self, part: PartNumber) -> PartNumber:
+        return await self.repository.create_part(part)
 
-    def get_part(self, part_number: str) -> PartNumberDTO | None:
-        part = self.repository.get_part(part_number)
-        return PartNumberDTO(**part.__dict__) if part else None
+    async def get_part(self, part_number: str):
+        return await self.repository.get_part(part_number)
 
-    def update_part(self, part: PartNumber) -> PartNumberDTO:
-        updated = self.repository.update_part(part)
-        return PartNumberDTO(**updated.__dict__)
+    async def update_part(self, part: PartNumber) -> PartNumber:
+        return await self.repository.update_part(part)
 
-    def delete_part(self, part_number: str) -> bool:
-        return self.repository.delete_part(part_number)
+    async def delete_part(self, part_number: str) -> bool:
+        return await self.repository.delete_part(part_number)
 
-    def list_parts(self) -> list[PartNumberDTO]:
-        parts = self.repository.list_parts()
-        return [PartNumberDTO(**p.__dict__) for p in parts]
+    async def list_parts(self):
+        return await self.repository.list_parts()
+
+    # ---------------- Matches ----------------
+    async def create_match(self, match: Match) -> Match:
+        return await self.repository.create_match(match)
+
+    async def get_match(self, source: str, target: str):
+        return await self.repository.get_match(source, target)
+
+    async def update_match(self, match: Match) -> Match:
+        return await self.repository.update_match(match)
+
+    async def delete_match(self, source: str, target: str) -> bool:
+        return await self.repository.delete_match(source, target)
+
+    async def list_matches(self):
+        return await self.repository.list_matches()
+
+    async def get_matches_for_part(self, part_number: str):
+        return await self.repository.get_matches_for_part(part_number)

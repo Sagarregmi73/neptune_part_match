@@ -16,7 +16,10 @@ class UploadFileUseCase:
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
         self.logic = MatchLogic()
 
-    def execute(self, file_bytes: BytesIO, filename: str) -> dict:
+    async def execute(self, file_bytes: BytesIO, filename: str) -> dict:
+        """
+        Async processing of the Excel file and creating parts + matches in Neptune.
+        """
         try:
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
@@ -52,9 +55,9 @@ class UploadFileUseCase:
                     row.get("Output Note 3", "")
                 )
 
-                # Save parts in DB
-                self.part_usecase.create_part(input_part)
-                self.part_usecase.create_part(output_part)
+                # Async save parts in DB
+                await self.part_usecase.create_part(input_part)
+                await self.part_usecase.create_part(output_part)
 
                 # Determine match type automatically
                 match_type = row.get("Match Type")
@@ -67,7 +70,7 @@ class UploadFileUseCase:
                     )
 
                 match = Match(input_part.part_number, output_part.part_number, match_type)
-                self.match_usecase.create_match(match)
+                await self.match_usecase.create_match(match)
 
                 # Prepare CSV for Neptune bulk loader
                 vertices.append({
@@ -108,6 +111,6 @@ class UploadFileUseCase:
             }
 
         finally:
-            # Close Neptune connections safely
-            self.part_usecase.repository.close()
-            self.match_usecase.repository.close()
+            # Async close Neptune connections safely
+            await self.part_usecase.repository.close()
+            await self.match_usecase.repository.close()

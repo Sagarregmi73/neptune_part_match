@@ -9,7 +9,7 @@ class NeptuneRepository(RepositoryInterface):
         self.g, self.connection = get_neptune_connection()
 
     # ---------------- PART CRUD ----------------
-    def create_part(self, part: PartNumber) -> PartNumber:
+    async def create_part(self, part: PartNumber) -> PartNumber:
         self.g.addV("PartNumber")\
             .property("id", part.part_number)\
             .property("spec1", part.spec1)\
@@ -22,7 +22,7 @@ class NeptuneRepository(RepositoryInterface):
             .property("note3", part.note3).next()
         return part
 
-    def get_part(self, part_number: str):
+    async def get_part(self, part_number: str):
         try:
             v = self.g.V().has("PartNumber", "id", part_number).next()
             return PartNumber(
@@ -39,7 +39,7 @@ class NeptuneRepository(RepositoryInterface):
         except StopIteration:
             return None
 
-    def update_part(self, part: PartNumber) -> PartNumber:
+    async def update_part(self, part: PartNumber) -> PartNumber:
         self.g.V().has("PartNumber", "id", part.part_number)\
             .property("spec1", part.spec1)\
             .property("spec2", part.spec2)\
@@ -51,11 +51,11 @@ class NeptuneRepository(RepositoryInterface):
             .property("note3", part.note3).next()
         return part
 
-    def delete_part(self, part_number: str) -> bool:
+    async def delete_part(self, part_number: str) -> bool:
         self.g.V().has("PartNumber", "id", part_number).drop().iterate()
         return True
 
-    def list_parts(self):
+    async def list_parts(self):
         vertices = self.g.V().hasLabel("PartNumber").toList()
         parts = []
         for v in vertices:
@@ -75,7 +75,7 @@ class NeptuneRepository(RepositoryInterface):
         return parts
 
     # ---------------- MATCH CRUD ----------------
-    def create_match(self, match: Match) -> Match:
+    async def create_match(self, match: Match) -> Match:
         self.g.V().has("PartNumber", "id", match.source).as_("a")\
             .V().has("PartNumber", "id", match.target)\
             .coalesce(
@@ -84,7 +84,7 @@ class NeptuneRepository(RepositoryInterface):
             ).next()
         return match
 
-    def get_match(self, source: str, target: str):
+    async def get_match(self, source: str, target: str):
         edges = self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", source))\
             .where(__.inV().has("id", target)).toList()
@@ -92,24 +92,24 @@ class NeptuneRepository(RepositoryInterface):
             return Match(source, target, edges[0].properties["match_type"][0].value)
         return None
 
-    def update_match(self, match: Match) -> Match:
+    async def update_match(self, match: Match) -> Match:
         e = self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", match.source))\
             .where(__.inV().has("id", match.target)).next()
         e.property("match_type", match.match_type)
         return match
 
-    def delete_match(self, source: str, target: str) -> bool:
+    async def delete_match(self, source: str, target: str) -> bool:
         self.g.E().hasLabel("MATCHED")\
             .where(__.outV().has("id", source))\
             .where(__.inV().has("id", target)).drop().iterate()
         return True
 
-    def list_matches(self):
+    async def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
         return [Match(e.outV.id, e.inV.id, e.properties["match_type"][0].value) for e in edges]
 
-    def get_matches_for_part(self, part_number: str):
+    async def get_matches_for_part(self, part_number: str):
         edges_out = self.g.V().has("PartNumber", "id", part_number).outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
         edges_in  = self.g.V().has("PartNumber", "id", part_number).inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
         matches = []
@@ -117,8 +117,7 @@ class NeptuneRepository(RepositoryInterface):
             matches.append(Match(e["e"].outV.id, e["e"].inV.id, e["e"].properties["match_type"][0].value))
         return matches
 
-    # ---------------- CLOSE CONNECTION ----------------
-    def close(self):
+    async def close(self):
         try:
             if self.connection:
                 self.connection.close()
