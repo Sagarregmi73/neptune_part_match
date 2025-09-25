@@ -18,6 +18,11 @@ class UploadFileUseCase:
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
         self.logic = MatchLogic()
 
+    # Helper to safely convert values to string
+    @staticmethod
+    def safe_str(val):
+        return "" if val is None else str(val)
+
     async def execute(self, file_bytes: BytesIO, filename: str) -> dict:
         # Save uploaded file to a temporary file
         async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
@@ -31,35 +36,39 @@ class UploadFileUseCase:
         vertices, edges = [], []
 
         for _, row in df.iterrows():
+            # Create input PartNumber
             input_part = PartNumber(
-                row.get("Input Part Number"),
-                row.get("Input Spec 1"),
-                row.get("Input Spec 2"),
-                row.get("Input Spec 3"),
-                row.get("Input Spec 4"),
-                row.get("Input Spec 5"),
-                row.get("Input Note 1", ""),
-                row.get("Input Note 2", ""),
-                row.get("Input Note 3", "")
-            )
-            output_part = PartNumber(
-                row.get("Output Part Number"),
-                row.get("Output Spec 1"),
-                row.get("Output Spec 2"),
-                row.get("Output Spec 3"),
-                row.get("Output Spec 4"),
-                row.get("Output Spec 5"),
-                row.get("Output Note 1", ""),
-                row.get("Output Note 2", ""),
-                row.get("Output Note 3", "")
+                self.safe_str(row.get("Input Part Number")),
+                self.safe_str(row.get("Input Spec 1")),
+                self.safe_str(row.get("Input Spec 2")),
+                self.safe_str(row.get("Input Spec 3")),
+                self.safe_str(row.get("Input Spec 4")),
+                self.safe_str(row.get("Input Spec 5")),
+                self.safe_str(row.get("Input Note 1")),
+                self.safe_str(row.get("Input Note 2")),
+                self.safe_str(row.get("Input Note 3"))
             )
 
-            # ✅ Run synchronous repository calls safely in async function
+            # Create output PartNumber
+            output_part = PartNumber(
+                self.safe_str(row.get("Output Part Number")),
+                self.safe_str(row.get("Output Spec 1")),
+                self.safe_str(row.get("Output Spec 2")),
+                self.safe_str(row.get("Output Spec 3")),
+                self.safe_str(row.get("Output Spec 4")),
+                self.safe_str(row.get("Output Spec 5")),
+                self.safe_str(row.get("Output Note 1")),
+                self.safe_str(row.get("Output Note 2")),
+                self.safe_str(row.get("Output Note 3"))
+            )
+
+            # Save parts to Neptune via repository in async thread
             await asyncio.to_thread(self.part_usecase.create_part, input_part)
             await asyncio.to_thread(self.part_usecase.create_part, output_part)
 
-            match_type = row.get("Match Type")
-            if not match_type or str(match_type).lower() in ["", "auto"]:
+            # Determine match type if not provided
+            match_type = self.safe_str(row.get("Match Type"))
+            if not match_type or match_type.lower() in ["", "auto"]:
                 match_type = self.logic.determine_match(
                     {f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
                     {f"note{i+1}": getattr(input_part, f"note{i+1}") for i in range(3)},
@@ -67,25 +76,33 @@ class UploadFileUseCase:
                     {f"note{i+1}": getattr(output_part, f"note{i+1}") for i in range(3)}
                 )
 
+            # Create match
             match = Match(input_part.part_number, output_part.part_number, match_type)
             await asyncio.to_thread(self.match_usecase.create_match, match)
 
+            # Prepare vertices for Neptune bulk loader
             vertices.append({
-                "~id": input_part.part_number, "~label": "PartNumber",
+                "~id": input_part.part_number,
+                "~label": "PartNumber",
                 **{f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
                 **{f"note{i+1}": getattr(input_part, f"note{i+1}") for i in range(3)}
             })
             vertices.append({
-                "~id": output_part.part_number, "~label": "PartNumber",
+                "~id": output_part.part_number,
+                "~label": "PartNumber",
                 **{f"spec{i+1}": getattr(output_part, f"spec{i+1}") for i in range(5)},
                 **{f"note{i+1}": getattr(output_part, f"note{i+1}") for i in range(3)}
             })
+
+            # Prepare edges
             edges.append({
-                "~from": input_part.part_number, "~to": output_part.part_number,
-                "~label": "MATCHED", "match_type": match_type
+                "~from": input_part.part_number,
+                "~to": output_part.part_number,
+                "~label": "MATCHED",
+                "match_type": match_type
             })
 
-        # Create CSVs for Neptune bulk loader
+        # Write CSVs for Neptune bulk loader
         vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
         edges_df = pd.DataFrame(edges)
 
@@ -94,10 +111,12 @@ class UploadFileUseCase:
         vertices_df.to_csv(vertices_csv, index=False)
         edges_df.to_csv(edges_csv, index=False)
 
+        # Backup to S3 if enabled
         if self.backup_to_s3:
             await upload_file_to_s3_async(vertices_csv, f"neptune_bulk/{os.path.basename(vertices_csv)}")
             await upload_file_to_s3_async(edges_csv, f"neptune_bulk/{os.path.basename(edges_csv)}")
 
+        # Trigger Neptune bulk load
         bulk_response = await trigger_bulk_load(f"s3://{self.s3_bucket}/neptune_bulk/", mode="NEW")
         bulk_load_id = bulk_response.get("payload", {}).get("loadId") if isinstance(bulk_response, dict) else None
 
