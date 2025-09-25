@@ -116,7 +116,8 @@ class NeptuneRepository(RepositoryInterface):
         for e in edges_out + edges_in:
             matches.append(Match(e["e"].outV.id, e["e"].inV.id, e["e"].properties["match_type"][0].value))
         return matches
-    
+
+    # ---------------- CLOSE CONNECTION ----------------
     def close(self):
         try:
             if self.connection:
