@@ -1,9 +1,7 @@
 import pandas as pd
 import tempfile
-import os
 from io import BytesIO
 import asyncio
-import aiofiles
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 from lib.app.domain.services.match_logic import MatchLogic
@@ -18,88 +16,67 @@ class UploadFileUseCase:
         self.s3_bucket = os.getenv("S3_BUCKET_NAME")
         self.logic = MatchLogic()
 
-    @staticmethod
-    def safe_str(val):
-        """Convert value to string, replace None/NaN with empty string."""
-        if pd.isna(val) or val is None:
-            return ""
-        return str(val)
+    def safe_str(self, val):
+        return "" if pd.isna(val) else str(val).strip()
 
     async def execute(self, file_bytes: BytesIO, filename: str) -> dict:
-        # Save uploaded file to a temporary file
-        async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            await tmp.write(file_bytes.read())
+        # Save Excel temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(file_bytes.read())
             tmp_path = tmp.name
 
-        # Read Excel file
+        # Read Excel: skip template row
         df = pd.read_excel(tmp_path)
-        df = df.iloc[2:]  # skip first 2 rows (header + template)
-        df = df.fillna("")  # Replace NaN with empty string
-
-        # Strip leading/trailing spaces from column names
+        df = df.iloc[2:]  # skip header + template
+        df = df.fillna("")
         df.columns = [str(c).strip() for c in df.columns]
 
         vertices, edges = [], []
 
         for _, row in df.iterrows():
             input_part = PartNumber(
-                self.safe_str(row.get("Input Part Number", "")),
-                self.safe_str(row.get("Input Spec 1", "")),
-                self.safe_str(row.get("Input Spec 2", "")),
-                self.safe_str(row.get("Input Spec 3", "")),
-                self.safe_str(row.get("Input Spec 4", "")),
-                self.safe_str(row.get("Input Spec 5", "")),
-                self.safe_str(row.get("Input Note 1", "")),
-                self.safe_str(row.get("Input Note 2", "")),
-                self.safe_str(row.get("Input Note 3", ""))
-            )
-            output_part = PartNumber(
-                self.safe_str(row.get("Output Part Number", "")),
-                self.safe_str(row.get("Output Spec 1", "")),
-                self.safe_str(row.get("Output Spec 2", "")),
-                self.safe_str(row.get("Output Spec 3", "")),
-                self.safe_str(row.get("Output Spec 4", "")),
-                self.safe_str(row.get("Output Spec 5", "")),
-                self.safe_str(row.get("Output Note 1", "")),
-                self.safe_str(row.get("Output Note 2", "")),
-                self.safe_str(row.get("Output Note 3", ""))
+                self.safe_str(row.get("Input Part Number")),
+                *[self.safe_str(row.get(f"Input Spec {i}")) for i in range(1,6)],
+                *[self.safe_str(row.get(f"Input Note {i}")) for i in range(1,4)]
             )
 
-            # Insert parts in Neptune safely in async
+            output_part = PartNumber(
+                self.safe_str(row.get("Output Part Number")),
+                *[self.safe_str(row.get(f"Output Spec {i}")) for i in range(1,6)],
+                *[self.safe_str(row.get(f"Output Note {i}")) for i in range(1,4)]
+            )
+
+            # Save parts
             await asyncio.to_thread(self.part_usecase.create_part, input_part)
             await asyncio.to_thread(self.part_usecase.create_part, output_part)
 
             # Determine match type
-            match_type = self.safe_str(row.get("Match Type"))
-            if not match_type or match_type.lower() in ["", "auto"]:
+            match_type = self.safe_str(row.get("Match Type")) or "AUTO"
+            if match_type == "AUTO":
                 match_type = self.logic.determine_match(
-                    {f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
-                    {f"note{i+1}": getattr(input_part, f"note{i+1}") for i in range(3)},
-                    {f"spec{i+1}": getattr(output_part, f"spec{i+1}") for i in range(5)},
-                    {f"note{i+1}": getattr(output_part, f"note{i+1}") for i in range(3)}
+                    {f"spec{i}": getattr(input_part, f"spec{i}") for i in range(1,6)},
+                    {f"note{i}": getattr(input_part, f"note{i}") for i in range(1,4)},
+                    {f"spec{i}": getattr(output_part, f"spec{i}") for i in range(1,6)},
+                    {f"note{i}": getattr(output_part, f"note{i}") for i in range(1,4)}
                 )
 
             match = Match(input_part.part_number, output_part.part_number, match_type)
             await asyncio.to_thread(self.match_usecase.create_match, match)
 
-            # Prepare vertices and edges for Neptune bulk loader
-            vertices.append({
-                "~id": input_part.part_number, "~label": "PartNumber",
-                **{f"spec{i+1}": getattr(input_part, f"spec{i+1}") for i in range(5)},
-                **{f"note{i+1}": getattr(input_part, f"note{i+1}") for i in range(3)}
-            })
-            vertices.append({
-                "~id": output_part.part_number, "~label": "PartNumber",
-                **{f"spec{i+1}": getattr(output_part, f"spec{i+1}") for i in range(5)},
-                **{f"note{i+1}": getattr(output_part, f"note{i+1}") for i in range(3)}
-            })
+            # Prepare for bulk loader
+            vertices.extend([
+                {"~id": input_part.part_number, "~label": "PartNumber", **{f"spec{i}": getattr(input_part, f"spec{i}") for i in range(1,6)}, **{f"note{i}": getattr(input_part, f"note{i}") for i in range(1,4)}},
+                {"~id": output_part.part_number, "~label": "PartNumber", **{f"spec{i}": getattr(output_part, f"spec{i}") for i in range(1,6)}, **{f"note{i}": getattr(output_part, f"note{i}") for i in range(1,4)}}
+            ])
             edges.append({
-                "~from": input_part.part_number, "~to": output_part.part_number,
-                "~label": "MATCHED", "match_type": match_type
+                "~from": input_part.part_number,
+                "~to": output_part.part_number,
+                "~label": "MATCHED",
+                "match_type": match_type
             })
 
-        # Create CSVs for Neptune bulk loader
-        vertices_df = pd.DataFrame(vertices).drop_duplicates(subset="~id")
+        # Convert to CSV & optional S3 backup
+        vertices_df = pd.DataFrame(vertices).drop_duplicates("~id")
         edges_df = pd.DataFrame(edges)
 
         vertices_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv").name
@@ -115,7 +92,7 @@ class UploadFileUseCase:
         bulk_load_id = bulk_response.get("payload", {}).get("loadId") if isinstance(bulk_response, dict) else None
 
         return {
-            "message": "File processed and matches created successfully",
+            "message": "File processed successfully",
             "vertices_created": len(vertices_df),
             "edges_created": len(edges_df),
             "bulk_load_id": bulk_load_id
