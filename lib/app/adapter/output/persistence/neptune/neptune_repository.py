@@ -4,6 +4,19 @@ from lib.app.domain.entities.match import Match
 from lib.core.aws.neptune_client import get_neptune_connection
 from gremlin_python.process.graph_traversal import __
 
+
+def _get_prop(obj, key: str, default=None):
+    """Safely get property from Neptune Vertex/Edge."""
+    try:
+        if hasattr(obj, "properties") and key in obj.properties:
+            props = obj.properties[key]
+            if isinstance(props, list) and len(props) > 0:
+                return props[0].value
+    except Exception:
+        pass
+    return default
+
+
 class NeptuneRepository(RepositoryInterface):
     def __init__(self):
         self.g, self.connection = get_neptune_connection()
@@ -27,15 +40,15 @@ class NeptuneRepository(RepositoryInterface):
         try:
             v = self.g.V().has("PartNumber", "id", part_number).next()
             return PartNumber(
-                v.id,
-                v.properties["spec1"][0].value,
-                v.properties["spec2"][0].value,
-                v.properties["spec3"][0].value,
-                v.properties["spec4"][0].value,
-                v.properties["spec5"][0].value,
-                v.properties.get("note1", [{}])[0].get("value", ""),
-                v.properties.get("note2", [{}])[0].get("value", ""),
-                v.properties.get("note3", [{}])[0].get("value", "")
+                _get_prop(v, "id", v.id),
+                _get_prop(v, "spec1"),
+                _get_prop(v, "spec2"),
+                _get_prop(v, "spec3"),
+                _get_prop(v, "spec4"),
+                _get_prop(v, "spec5"),
+                _get_prop(v, "note1", ""),
+                _get_prop(v, "note2", ""),
+                _get_prop(v, "note3", "")
             )
         except StopIteration:
             return None
@@ -63,15 +76,15 @@ class NeptuneRepository(RepositoryInterface):
         for v in vertices:
             parts.append(
                 PartNumber(
-                    v.id,
-                    v.properties["spec1"][0].value,
-                    v.properties["spec2"][0].value,
-                    v.properties["spec3"][0].value,
-                    v.properties["spec4"][0].value,
-                    v.properties["spec5"][0].value,
-                    v.properties.get("note1", [{}])[0].get("value", ""),
-                    v.properties.get("note2", [{}])[0].get("value", ""),
-                    v.properties.get("note3", [{}])[0].get("value", "")
+                    _get_prop(v, "id", v.id),
+                    _get_prop(v, "spec1"),
+                    _get_prop(v, "spec2"),
+                    _get_prop(v, "spec3"),
+                    _get_prop(v, "spec4"),
+                    _get_prop(v, "spec5"),
+                    _get_prop(v, "note1", ""),
+                    _get_prop(v, "note2", ""),
+                    _get_prop(v, "note3", "")
                 )
             )
         return parts
@@ -91,7 +104,7 @@ class NeptuneRepository(RepositoryInterface):
             .where(__.outV().has("id", source))\
             .where(__.inV().has("id", target)).toList()
         if edges:
-            return Match(source, target, edges[0].properties["match_type"][0].value)
+            return Match(source, target, _get_prop(edges[0], "match_type"))
         return None
 
     def update_match(self, match: Match) -> Match:
@@ -109,16 +122,16 @@ class NeptuneRepository(RepositoryInterface):
 
     def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
-        return [Match(e.outV.id, e.inV.id, e.properties["match_type"][0].value) for e in edges]
+        return [Match(e.outV.id, e.inV.id, _get_prop(e, "match_type")) for e in edges]
 
     def get_matches_for_part(self, part_number: str):
         edges_out = self.g.V().has("PartNumber", "id", part_number)\
-            .outE("MATCHED").as_("e").inV().as_("v").select("e","v").toList()
-        edges_in  = self.g.V().has("PartNumber", "id", part_number)\
-            .inE("MATCHED").as_("e").outV().as_("v").select("e","v").toList()
+            .outE("MATCHED").as_("e").inV().as_("v").select("e", "v").toList()
+        edges_in = self.g.V().has("PartNumber", "id", part_number)\
+            .inE("MATCHED").as_("e").outV().as_("v").select("e", "v").toList()
         matches = []
         for e in edges_out + edges_in:
-            matches.append(Match(e["e"].outV.id, e["e"].inV.id, e["e"].properties["match_type"][0].value))
+            matches.append(Match(e["e"].outV.id, e["e"].inV.id, _get_prop(e["e"], "match_type")))
         return matches
 
     def close(self):
