@@ -4,20 +4,14 @@ import os
 
 def get_neptune_connection():
     """
-    Returns a Gremlin traversal source (g) and closable connection object for Neptune.
-    
-    Usage:
-        g, conn = get_neptune_connection()
-        g.V().hasLabel("PartNumber").toList()
-        conn.close()
+    Returns async Gremlin traversal source (g) and closable connection for Neptune.
     """
     endpoint = os.getenv("NEPTUNE_ENDPOINT")
     port = os.getenv("NEPTUNE_PORT", 8182)
     url = f"wss://{endpoint}:{port}/gremlin"
 
     graph = Graph()
-    remote_conn = DriverRemoteConnection(url, 'g')  # create closable connection
-    g = graph.traversal().withRemote(remote_conn)   # GraphTraversalSource
+    remote_conn = DriverRemoteConnection(url, 'g')
+    g = graph.traversal().withRemote(remote_conn)
 
-    # Return traversal source and closable connection separately
     return g, remote_conn
