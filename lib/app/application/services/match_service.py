@@ -1,3 +1,5 @@
+# lib/app/application/services/match_service.py
+
 from typing import List, Optional
 from lib.app.application.services.repository_interface import RepositoryInterface
 from lib.app.domain.entities.match import Match
@@ -53,7 +55,7 @@ class MatchService:
         logger.info(f"Match deleted: {source} -> {target}, success={result}")
         return result
 
-    # ------------------- BIDIRECTIONAL SEARCH -------------------
+    # ------------------- SEARCH -------------------
     def search_matches_for_part(self, part_number: str):
         """
         Returns:

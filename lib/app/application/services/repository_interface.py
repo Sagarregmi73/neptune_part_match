@@ -1,3 +1,5 @@
+# lib/app/application/services/repository_interface.py
+
 from abc import ABC, abstractmethod
 from typing import List, Optional
 from lib.app.domain.entities.part_number import PartNumber

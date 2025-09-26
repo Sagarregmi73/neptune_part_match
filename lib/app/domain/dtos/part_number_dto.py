@@ -1,6 +1,8 @@
+# lib/app/domain/dtos/part_number_dto.py
 from pydantic import BaseModel
 
 class PartNumberDTO(BaseModel):
+    id: str = None
     part_number: str
     spec1: str
     spec2: str
