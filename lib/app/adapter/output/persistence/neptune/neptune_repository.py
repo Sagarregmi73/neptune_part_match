@@ -1,5 +1,3 @@
-# lib/app/adapter/output/persistence/neptune/neptune_repository.py
-
 from lib.app.application.services.repository_interface import RepositoryInterface
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
@@ -24,9 +22,12 @@ class NeptuneRepository(RepositoryInterface):
 
     # ---------- PART CRUD ----------
     def create_part(self, part: PartNumber) -> PartNumber:
-        composite_id = f"{part.part_number}_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
+        # Generate unique composite id if not already present
+        if not part.id:
+            part.id = f"{part.part_number}_{hashlib.md5(str(time.time()).encode()).hexdigest()}"
+        
         self.g.addV("PartNumber")\
-            .property("id", composite_id)\
+            .property("id", part.id)\
             .property("part_number", part.part_number)\
             .property("spec1", part.spec1)\
             .property("spec2", part.spec2)\
@@ -37,14 +38,12 @@ class NeptuneRepository(RepositoryInterface):
             .property("note2", part.note2)\
             .property("note3", part.note3)\
             .next()
-        part.id = composite_id
         return part
 
     def get_part(self, part_number: str):
         try:
             v = self.g.V().has("PartNumber", "part_number", part_number).next()
             return PartNumber(
-                id=_get_prop(v, "id", v.id),
                 part_number=_get_prop(v, "part_number", v.id),
                 spec1=_get_prop(v, "spec1"),
                 spec2=_get_prop(v, "spec2"),
@@ -53,7 +52,8 @@ class NeptuneRepository(RepositoryInterface):
                 spec5=_get_prop(v, "spec5"),
                 note1=_get_prop(v, "note1"),
                 note2=_get_prop(v, "note2"),
-                note3=_get_prop(v, "note3")
+                note3=_get_prop(v, "note3"),
+                id=_get_prop(v, "id", v.id)
             )
         except StopIteration:
             return None
@@ -70,8 +70,7 @@ class NeptuneRepository(RepositoryInterface):
             .property("note2", part.note2)\
             .property("note3", part.note3)\
             .next()
-        part.id = _get_prop(v, "id", v.id)
-        return part
+        return self.get_part(part.part_number)
 
     def delete_part(self, part_number: str) -> bool:
         self.g.V().has("PartNumber", "part_number", part_number).drop().iterate()
@@ -83,7 +82,6 @@ class NeptuneRepository(RepositoryInterface):
         for v in vertices:
             parts.append(
                 PartNumber(
-                    id=_get_prop(v, "id", v.id),
                     part_number=_get_prop(v, "part_number", v.id),
                     spec1=_get_prop(v, "spec1"),
                     spec2=_get_prop(v, "spec2"),
@@ -92,7 +90,8 @@ class NeptuneRepository(RepositoryInterface):
                     spec5=_get_prop(v, "spec5"),
                     note1=_get_prop(v, "note1"),
                     note2=_get_prop(v, "note2"),
-                    note3=_get_prop(v, "note3")
+                    note3=_get_prop(v, "note3"),
+                    id=_get_prop(v, "id", v.id)
                 )
             )
         return parts
@@ -137,7 +136,6 @@ class NeptuneRepository(RepositoryInterface):
         try:
             part_vertex = self.g.V().has("PartNumber", "part_number", part_number).next()
             part_data = PartNumber(
-                id=_get_prop(part_vertex, "id", part_vertex.id),
                 part_number=_get_prop(part_vertex, "part_number", part_vertex.id),
                 spec1=_get_prop(part_vertex, "spec1"),
                 spec2=_get_prop(part_vertex, "spec2"),
@@ -146,7 +144,8 @@ class NeptuneRepository(RepositoryInterface):
                 spec5=_get_prop(part_vertex, "spec5"),
                 note1=_get_prop(part_vertex, "note1"),
                 note2=_get_prop(part_vertex, "note2"),
-                note3=_get_prop(part_vertex, "note3")
+                note3=_get_prop(part_vertex, "note3"),
+                id=_get_prop(part_vertex, "id", part_vertex.id)
             )
         except StopIteration:
             return None
@@ -160,7 +159,6 @@ class NeptuneRepository(RepositoryInterface):
         for e in edges_out + edges_in:
             matched_vertex = e["v"]
             matched_part = PartNumber(
-                id=_get_prop(matched_vertex, "id", matched_vertex.id),
                 part_number=_get_prop(matched_vertex, "part_number", matched_vertex.id),
                 spec1=_get_prop(matched_vertex, "spec1"),
                 spec2=_get_prop(matched_vertex, "spec2"),
@@ -169,7 +167,8 @@ class NeptuneRepository(RepositoryInterface):
                 spec5=_get_prop(matched_vertex, "spec5"),
                 note1=_get_prop(matched_vertex, "note1"),
                 note2=_get_prop(matched_vertex, "note2"),
-                note3=_get_prop(matched_vertex, "note3")
+                note3=_get_prop(matched_vertex, "note3"),
+                id=_get_prop(matched_vertex, "id", matched_vertex.id)
             )
             matches.append({
                 "replacement_part": matched_part,
