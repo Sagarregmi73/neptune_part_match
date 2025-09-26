@@ -1,8 +1,3 @@
-from lib.app.domain.entities.match import Match
-from lib.app.domain.dtos.match_dto import MatchDTO
-from lib.app.adapter.output.persistence.neptune.neptune_repository import NeptuneRepository
-
-
 class MatchPartUseCase:
     def __init__(self, repository):
         self.repository = repository

@@ -1,6 +1,7 @@
 from typing import List, Optional
 from lib.app.application.services.repository_interface import RepositoryInterface
 from lib.app.domain.entities.match import Match
+from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.services.match_logic import MatchLogic
 from lib.core.logging import logger
 
@@ -24,12 +25,10 @@ class MatchService:
         target_notes: Optional[dict] = None,
         match_type: Optional[str] = None
     ) -> Match:
-        """
-        Create a match. If match_type not provided, determine automatically.
-        """
         if not match_type and all([source_specs, source_notes, target_specs, target_notes]):
-            match_type = self.logic.determine_match(source_specs, source_notes, target_specs, target_notes)
-
+            match_type = self.logic.determine_match(
+                source_specs, source_notes, target_specs, target_notes
+            )
         match = Match(source=source, target=target, match_type=match_type or "No Match")
         self.repository.create_match(match)
         logger.info(f"Match created: {match.source} -> {match.target} ({match.match_type})")
@@ -55,8 +54,17 @@ class MatchService:
         return result
 
     # ------------------- BIDIRECTIONAL SEARCH -------------------
-    def search_matches_for_part(self, part_number: str) -> List[Match]:
+    def search_matches_for_part(self, part_number: str):
         """
-        Returns all matches where part_number is either source or target.
+        Returns:
+        {
+            "part": PartNumber,
+            "matches": [
+                {
+                    "replacement_part": PartNumber,
+                    "match_type": str
+                }, ...
+            ]
+        }
         """
         return self.repository.get_matches_for_part(part_number)

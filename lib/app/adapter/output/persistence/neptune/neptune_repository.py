@@ -3,10 +3,10 @@ from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 from lib.core.aws.neptune_client import get_neptune_connection
 from gremlin_python.process.graph_traversal import __
-
+import hashlib
+import time
 
 def _get_prop(obj, key: str, default=""):
-    """Safely get property from Neptune Vertex/Edge. Always returns string."""
     try:
         if hasattr(obj, "properties") and key in obj.properties:
             props = obj.properties[key]
@@ -16,15 +16,16 @@ def _get_prop(obj, key: str, default=""):
         pass
     return default
 
-
 class NeptuneRepository(RepositoryInterface):
     def __init__(self):
         self.g, self.connection = get_neptune_connection()
 
     # ---------- PART CRUD ----------
     def create_part(self, part: PartNumber) -> PartNumber:
+        composite_id = f"{part.part_number}_{hashlib.md5(str(time.time()).encode()).hexdigest()}"
         self.g.addV("PartNumber")\
-            .property("id", part.part_number)\
+            .property("id", composite_id)\
+            .property("part_number", part.part_number)\
             .property("spec1", part.spec1)\
             .property("spec2", part.spec2)\
             .property("spec3", part.spec3)\
@@ -38,23 +39,24 @@ class NeptuneRepository(RepositoryInterface):
 
     def get_part(self, part_number: str):
         try:
-            v = self.g.V().has("PartNumber", "id", part_number).next()
+            v = self.g.V().has("PartNumber", "part_number", part_number).next()
             return PartNumber(
-                _get_prop(v, "id", v.id),
+                _get_prop(v, "part_number", v.id),
                 _get_prop(v, "spec1"),
                 _get_prop(v, "spec2"),
                 _get_prop(v, "spec3"),
                 _get_prop(v, "spec4"),
                 _get_prop(v, "spec5"),
-                _get_prop(v, "note1", ""),
-                _get_prop(v, "note2", ""),
-                _get_prop(v, "note3", "")
+                _get_prop(v, "note1"),
+                _get_prop(v, "note2"),
+                _get_prop(v, "note3")
             )
         except StopIteration:
             return None
 
     def update_part(self, part: PartNumber) -> PartNumber:
-        self.g.V().has("PartNumber", "id", part.part_number)\
+        v = self.g.V().has("PartNumber", "part_number", part.part_number).next()
+        self.g.V(v.id)\
             .property("spec1", part.spec1)\
             .property("spec2", part.spec2)\
             .property("spec3", part.spec3)\
@@ -67,7 +69,7 @@ class NeptuneRepository(RepositoryInterface):
         return part
 
     def delete_part(self, part_number: str) -> bool:
-        self.g.V().has("PartNumber", "id", part_number).drop().iterate()
+        self.g.V().has("PartNumber", "part_number", part_number).drop().iterate()
         return True
 
     def list_parts(self):
@@ -76,23 +78,23 @@ class NeptuneRepository(RepositoryInterface):
         for v in vertices:
             parts.append(
                 PartNumber(
-                    _get_prop(v, "id", v.id),
+                    _get_prop(v, "part_number", v.id),
                     _get_prop(v, "spec1"),
                     _get_prop(v, "spec2"),
                     _get_prop(v, "spec3"),
                     _get_prop(v, "spec4"),
                     _get_prop(v, "spec5"),
-                    _get_prop(v, "note1", ""),
-                    _get_prop(v, "note2", ""),
-                    _get_prop(v, "note3", "")
+                    _get_prop(v, "note1"),
+                    _get_prop(v, "note2"),
+                    _get_prop(v, "note3")
                 )
             )
         return parts
 
     # ---------- MATCH CRUD ----------
     def create_match(self, match: Match) -> Match:
-        self.g.V().has("PartNumber", "id", match.source).as_("a")\
-            .V().has("PartNumber", "id", match.target)\
+        self.g.V().has("PartNumber", "part_number", match.source).as_("a")\
+            .V().has("PartNumber", "part_number", match.target)\
             .coalesce(
                 __.inE("MATCHED").where(__.outV().as_("a")),
                 __.addE("MATCHED").from_("a").property("match_type", match.match_type)
@@ -101,38 +103,75 @@ class NeptuneRepository(RepositoryInterface):
 
     def get_match(self, source: str, target: str):
         edges = self.g.E().hasLabel("MATCHED")\
-            .where(__.outV().has("id", source))\
-            .where(__.inV().has("id", target)).toList()
+            .where(__.outV().has("part_number", source))\
+            .where(__.inV().has("part_number", target)).toList()
         if edges:
             return Match(source, target, _get_prop(edges[0], "match_type"))
         return None
 
     def update_match(self, match: Match) -> Match:
         e = self.g.E().hasLabel("MATCHED")\
-            .where(__.outV().has("id", match.source))\
-            .where(__.inV().has("id", match.target)).next()
+            .where(__.outV().has("part_number", match.source))\
+            .where(__.inV().has("part_number", match.target)).next()
         e.property("match_type", match.match_type)
         return match
 
     def delete_match(self, source: str, target: str) -> bool:
         self.g.E().hasLabel("MATCHED")\
-            .where(__.outV().has("id", source))\
-            .where(__.inV().has("id", target)).drop().iterate()
+            .where(__.outV().has("part_number", source))\
+            .where(__.inV().has("part_number", target)).drop().iterate()
         return True
 
     def list_matches(self):
         edges = self.g.E().hasLabel("MATCHED").toList()
         return [Match(e.outV.id, e.inV.id, _get_prop(e, "match_type")) for e in edges]
 
+    # ---------- GET MATCHES FOR PART ----------
     def get_matches_for_part(self, part_number: str):
-        edges_out = self.g.V().has("PartNumber", "id", part_number)\
+        try:
+            part_vertex = self.g.V().has("PartNumber", "part_number", part_number).next()
+            part_data = PartNumber(
+                _get_prop(part_vertex, "part_number", part_vertex.id),
+                _get_prop(part_vertex, "spec1"),
+                _get_prop(part_vertex, "spec2"),
+                _get_prop(part_vertex, "spec3"),
+                _get_prop(part_vertex, "spec4"),
+                _get_prop(part_vertex, "spec5"),
+                _get_prop(part_vertex, "note1"),
+                _get_prop(part_vertex, "note2"),
+                _get_prop(part_vertex, "note3")
+            )
+        except StopIteration:
+            return None
+
+        edges_out = self.g.V().has("PartNumber", "part_number", part_number)\
             .outE("MATCHED").as_("e").inV().as_("v").select("e", "v").toList()
-        edges_in = self.g.V().has("PartNumber", "id", part_number)\
+        edges_in = self.g.V().has("PartNumber", "part_number", part_number)\
             .inE("MATCHED").as_("e").outV().as_("v").select("e", "v").toList()
+
         matches = []
         for e in edges_out + edges_in:
-            matches.append(Match(e["e"].outV.id, e["e"].inV.id, _get_prop(e["e"], "match_type")))
-        return matches
+            matched_vertex = e["v"]
+            matched_part = PartNumber(
+                _get_prop(matched_vertex, "part_number", matched_vertex.id),
+                _get_prop(matched_vertex, "spec1"),
+                _get_prop(matched_vertex, "spec2"),
+                _get_prop(matched_vertex, "spec3"),
+                _get_prop(matched_vertex, "spec4"),
+                _get_prop(matched_vertex, "spec5"),
+                _get_prop(matched_vertex, "note1"),
+                _get_prop(matched_vertex, "note2"),
+                _get_prop(matched_vertex, "note3")
+            )
+            matches.append({
+                "replacement_part": matched_part,
+                "match_type": _get_prop(e["e"], "match_type")
+            })
+
+        return {
+            "part": part_data,
+            "matches": matches
+        }
 
     def close(self):
         try:

@@ -1,7 +1,4 @@
 class PartNumber:
-    """
-    Represents a PartNumber with 5 specs and 3 notes.
-    """
     def __init__(self, part_number: str, spec1: str, spec2: str, spec3: str, spec4: str, spec5: str,
                  note1: str = "", note2: str = "", note3: str = ""):
         self.part_number = part_number

@@ -2,12 +2,13 @@ import pandas as pd
 import tempfile
 from io import BytesIO
 import asyncio
+import os
+import hashlib
 from lib.app.domain.entities.part_number import PartNumber
 from lib.app.domain.entities.match import Match
 from lib.app.domain.services.match_logic import MatchLogic
 from lib.core.aws.neptune_bulk_loader import trigger_bulk_load
 from lib.core.aws.s3_client import upload_file_to_s3_async
-import os
 
 class UploadFileUseCase:
     def __init__(self, part_usecase, match_usecase, backup_to_s3=True):
@@ -19,6 +20,11 @@ class UploadFileUseCase:
 
     def safe_str(self, val):
         return "" if pd.isna(val) else str(val).strip()
+
+    def generate_vertex_id(self, part_number: str) -> str:
+        """Composite vertex ID: part_number + hash(timestamp)"""
+        hash_str = hashlib.md5(os.urandom(16)).hexdigest()[:8]
+        return f"{part_number}_{hash_str}"
 
     async def execute(self, file_bytes: BytesIO, filename: str) -> dict:
         # Save Excel temporarily
@@ -35,17 +41,21 @@ class UploadFileUseCase:
         vertices, edges = [], []
 
         for _, row in df.iterrows():
+            # Input Part
             input_part = PartNumber(
                 self.safe_str(row.get("Input Part Number")),
                 *[self.safe_str(row.get(f"Input Spec {i}")) for i in range(1,6)],
                 *[self.safe_str(row.get(f"Input Note {i}")) for i in range(1,4)]
             )
+            input_vertex_id = self.generate_vertex_id(input_part.part_number)
 
+            # Output Part
             output_part = PartNumber(
                 self.safe_str(row.get("Output Part Number")),
                 *[self.safe_str(row.get(f"Output Spec {i}")) for i in range(1,6)],
                 *[self.safe_str(row.get(f"Output Note {i}")) for i in range(1,4)]
             )
+            output_vertex_id = self.generate_vertex_id(output_part.part_number)
 
             # Save parts
             await asyncio.to_thread(self.part_usecase.create_part, input_part)
@@ -61,17 +71,25 @@ class UploadFileUseCase:
                     {f"note{i}": getattr(output_part, f"note{i}") for i in range(1,4)}
                 )
 
+            # Save match
             match = Match(input_part.part_number, output_part.part_number, match_type)
             await asyncio.to_thread(self.match_usecase.create_match, match)
 
-            # Prepare for bulk loader
+            # Prepare vertices for bulk loader
             vertices.extend([
-                {"~id": input_part.part_number, "~label": "PartNumber", **{f"spec{i}": getattr(input_part, f"spec{i}") for i in range(1,6)}, **{f"note{i}": getattr(input_part, f"note{i}") for i in range(1,4)}},
-                {"~id": output_part.part_number, "~label": "PartNumber", **{f"spec{i}": getattr(output_part, f"spec{i}") for i in range(1,6)}, **{f"note{i}": getattr(output_part, f"note{i}") for i in range(1,4)}}
+                {"~id": input_vertex_id, "~label": "PartNumber",
+                 **{f"spec{i}": getattr(input_part, f"spec{i}") for i in range(1,6)},
+                 **{f"note{i}": getattr(input_part, f"note{i}") for i in range(1,4)},
+                 "part_number": input_part.part_number},
+                {"~id": output_vertex_id, "~label": "PartNumber",
+                 **{f"spec{i}": getattr(output_part, f"spec{i}") for i in range(1,6)},
+                 **{f"note{i}": getattr(output_part, f"note{i}") for i in range(1,4)},
+                 "part_number": output_part.part_number}
             ])
+
             edges.append({
-                "~from": input_part.part_number,
-                "~to": output_part.part_number,
+                "~from": input_vertex_id,
+                "~to": output_vertex_id,
                 "~label": "MATCHED",
                 "match_type": match_type
             })
